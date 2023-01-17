@@ -2,6 +2,47 @@
 
 This is a official Pi Network Ruby gem to integrate the Pi Network apps platform with a Ruby-based backend application.
 
+## Install
+
+1. Add the following line to your Gemfile:
+```ruby
+gem 'pi_network'
+```
+
+2. Install the gem
+```ruby
+$ bundle install
+```
+
+## Example
+
+1. Initialize the SDK
+```ruby
+require 'pi_network'
+
+# DO NOT expose these values to public
+api_key = "YOUR_PI_API_KEY"
+wallet_private_seed = "S_YOUR_WALLET_PRIVATE_SEED" # starts with S
+
+pi = PiNetwork.new(api_key, wallet_private_seed)
+```
+
+2. Create an A2U payment
+```ruby
+user_uid = "user_uid_of_your_app"
+payment_data = {
+  "amount": 1,
+  "memo": "From app to user test",
+  "metadata": {"test": "your metadata"},
+  "uid": user_uid
+}
+
+# check the status of the returned payment!
+# also don't forget that this is a long-running function (~10 seconds)
+payment = pi.create_payment!(payment_data)
+```
+
+
 ## Overall flow for A2U (App-to-User) payment
 
 To create an A2U payment using the Pi Ruby SDK, here's an overall flow you need to follow:
@@ -77,46 +118,4 @@ payment = {
     "_link": string, # a link to the operation on the Pi Blockchain API
   }
 }
-```
-
-
-## Install
-
-1. Add the following line to your Gemfile:
-```ruby
-gem 'pi_network'
-```
-
-2. Install the gem
-```ruby
-$ bundle install
-```
-
-
-## Example
-
-1. Initialize the SDK
-```ruby
-require 'pi_network'
-
-# DO NOT expose these values to public
-api_key = "YOUR_PI_API_KEY"
-wallet_private_seed = "S_YOUR_WALLET_PRIVATE_SEED" # starts with S
-
-pi = PiNetwork.new(api_key, wallet_private_seed)
-```
-
-2. Create an A2U payment
-```ruby
-user_uid = "user_uid_of_your_app"
-payment_data = {
-  "amount": 1,
-  "memo": "From app to user test",
-  "metadata": {"test": "your metadata"},
-  "uid": user_uid
-}
-
-# check the status of the returned payment!
-# also don't forget that this is a long-running function (~10 seconds)
-payment = pi.create_payment!(payment_data)
 ```
