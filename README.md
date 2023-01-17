@@ -114,5 +114,6 @@ payment_data = {
 }
 
 # check the status of the returned payment!
+# also don't forget that this is a long-running function (~10 seconds)
 payment = pi.create_payment!(payment_data)
 ```
