@@ -1,3 +1,6 @@
+gem_dir = Gem::Specification.find_by_name("pi_network").gem_dir
+require "#{gem_dir}/lib/errors"
+
 class PiNetwork
   require 'faraday'
   require 'json'
@@ -29,13 +32,26 @@ class PiNetwork
   def create_payment!(payment_data)
     validate_payment_data!(payment_data, {amount: true, memo: true, metadata: true, uid: true})
 
+    request_body = {
+      payment: payment_data,
+    }
+
     response = Faraday.post(
       base_url + "/v2/payments",
-      payment_data.to_json,
+      request_body.to_json,
       PiNetwork.header({api_key: self.api_key})
     )
 
-    raise StandardError.new("Failed to send API request to Pi Network") unless response.status == 200
+    unless response.status == 200
+      error_message = begin
+        JSON.parse(response.body).dig("error_message")
+      rescue
+        "An unknown error occured while creating the payment"
+      end
+        
+      raise Errors::APIRequestError.new(error_message, response.status, response.body)
+      # raise StandardError.new("Failed to send API request to Pi Network")
+    end
 
     parsed_response = JSON.parse(response.body)
     set_horizon_client(parsed_response["network"])
