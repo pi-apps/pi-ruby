@@ -50,7 +50,6 @@ class PiNetwork
       end
         
       raise Errors::APIRequestError.new(error_message, response.status, response.body)
-      # raise StandardError.new("Failed to send API request to Pi Network")
     end
 
     parsed_response = JSON.parse(response.body)
@@ -64,6 +63,9 @@ class PiNetwork
     }
 
     transaction = build_a2u_transaction!(transaction_data)
+    txid = submit_transaction(transaction)
+
+    complete_payment(parsed_response["identifier"], txid)
   end
 
   def complete_payment(identifier, txid)
@@ -73,6 +75,16 @@ class PiNetwork
       body.to_json,
       PiNetwork.header({api_key: self.api_key})
     )
+
+    unless response.status == 200
+      error_message = begin
+        JSON.parse(response.body).dig("error_message")
+      rescue
+        "An unknown error occured while completing the payment"
+      end
+        
+      raise Errors::APIRequestError.new(error_message, response.status, response.body)
+    end
 
     JSON.parse(response.body)
   end

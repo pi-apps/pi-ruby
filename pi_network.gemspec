@@ -9,5 +9,5 @@ Gem::Specification.new do |s|
   s.homepage    = "https://rubygems.org/gems/pi_network"
   s.license     = "PiOS"
   s.add_runtime_dependency "stellar-sdk", "~> 0.29.0"
-  s.add_runtime_dependency "faraday", "~> 0.17.5"
+  s.add_runtime_dependency "faraday", "~> 0"
 end
