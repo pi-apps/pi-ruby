@@ -102,7 +102,7 @@ This method creates a payment transaction and submits it to the Pi Blockchain.
 
 ### `complete_payment`
 
-This method completes the payment status in the Pi server.
+This method completes the payment in the Pi server.
 
 - Required parameter: `payment_id, txid`
 - Return value: `a payment object`
@@ -141,3 +141,17 @@ payment = {
   } | nil 
 }
 ```
+
+### `get_payment`
+
+This method returns a payment object if it exists.
+
+- Required parameter: `payment_id`
+- Return value: `a payment object`
+
+### `cancel_payment`
+
+This method cancels the payment in the Pi server.
+
+- Required parameter: `payment_id`
+- Return value: `a payment object`
