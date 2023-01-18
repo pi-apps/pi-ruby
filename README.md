@@ -75,7 +75,7 @@ To create an A2U payment using the Pi Ruby SDK, here's an overall flow you need 
 
 ## SDK Reference
 
-Here's a list of available methods. While there exists only one method at the moment, we will be providing more methods in the future, and this documentation will be updated accordingly.
+This section shows you a list of available methods.
 ### `create_payment`
 
 This method creates an A2U payment.
