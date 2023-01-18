@@ -18,7 +18,7 @@ class PiNetwork
     @account = load_account(wallet_private_key)
     @base_url = options[:base_url] || "https://api.minepi.com"
 
-    @payments = {}
+    @open_payments = {}
   end
 
   def get_payment(payment_id)
@@ -51,13 +51,13 @@ class PiNetwork
     parsed_response = handle_http_response(response, "An unknown error occured while creating a payment")
     
     identifier = parsed_response["identifier"]
-    @payments[identifier] = parsed_response
+    @open_payments[identifier] = parsed_response
 
     return identifier
   end
 
   def submit_payment(payment_id)
-    payment = @payments[payment_id]
+    payment = @open_payments[payment_id]
 
     if payment.nil?
       payment = get_payment(payment_id)
@@ -75,6 +75,8 @@ class PiNetwork
     transaction = build_a2u_transaction(transaction_data)
     txid = submit_transaction(transaction)
 
+    @open_payments.delete(payment_id)
+
     return txid
   end
 
@@ -88,6 +90,20 @@ class PiNetwork
     )
 
     handle_http_response(response, "An unknown error occured while completing a payment")
+  end
+
+  def cancel_payment(identifier)
+    payment = @open_payments[payment_id]
+
+    if payment.nil?
+      payment = get_payment(payment_id)
+    end
+
+    response = Faraday.post(
+      base_url + "/v2/payments",
+      request_body.to_json,
+      http_headers,
+    )
   end
 
   private
