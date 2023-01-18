@@ -36,10 +36,17 @@ payment_data = {
   "metadata": {"test": "your metadata"},
   "uid": user_uid
 }
+payment_id = pi.create_payment(payment_data)
+```
 
-# check the status of the returned payment!
-# also don't forget that this is a long-running function (~10 seconds)
-payment = pi.create_payment!(payment_data)
+3. Submit payment to the Pi Blockchain
+```ruby
+txid = pi.submit_payment(payment_id)
+```
+
+4. Complete the payment
+```ruby
+payment = pi.complete_payment(payment_id, txid)
 ```
 
 
