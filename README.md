@@ -103,7 +103,8 @@ wallet_private_seed = "S_YOUR_WALLET_PRIVATE_SEED" # starts with S
 pi = PiNetwork.new(api_key, wallet_private_seed)
 ```
 
-2. Create an A2U payment
+2. Create an app-to-user payment to one of your users
+
 ```ruby
 user_uid = "user_uid_of_your_app"
 payment_data = {
@@ -114,5 +115,18 @@ payment_data = {
 }
 
 # check the status of the returned payment!
-payment = pi.create_payment!(payment_data)
+payment_id = pi.create_payment(payment_data)
+
+<< store payment_id in your database here! >>
+
+
+transaction_id = pi.submit_payment(payment_id)
+
+<< update payment_id in your database to make sure you do not double pay the same user! >>
+<< we recommend storing transaction_id in your DB for your reference >>
+
+
+pi.complete_payment(payment_id, transaction_id)
+
+
 ```
