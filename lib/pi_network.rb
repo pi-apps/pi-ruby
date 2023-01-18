@@ -32,7 +32,7 @@ class PiNetwork
       raise Errors::PaymentNotFoundError.new("Payment not found", payment_id)
     end
 
-    handle_http_response(response, "An unknown error occurred while fetching a payment")
+    handle_http_response(response, "An unknown error occurred while fetching the payment")
   end
 
   def create_payment(payment_data)
@@ -48,7 +48,7 @@ class PiNetwork
       http_headers,
     )
 
-    parsed_response = handle_http_response(response, "An unknown error occured while creating a payment")
+    parsed_response = handle_http_response(response, "An unknown error occurred while creating a payment")
     
     identifier = parsed_response["identifier"]
     @open_payments[identifier] = parsed_response
@@ -89,21 +89,17 @@ class PiNetwork
       http_headers
     )
 
-    handle_http_response(response, "An unknown error occured while completing a payment")
+    handle_http_response(response, "An unknown error occurred while completing the payment")
   end
 
   def cancel_payment(identifier)
-    payment = @open_payments[payment_id]
-
-    if payment.nil?
-      payment = get_payment(payment_id)
-    end
-
     response = Faraday.post(
       base_url + "/v2/payments",
-      request_body.to_json,
+      {},
       http_headers,
     )
+
+    handle_http_response(response, "An unknown error occurred while cancelling the payment")
   end
 
   private
@@ -117,7 +113,7 @@ class PiNetwork
     }
   end
 
-  def handle_http_response(response, unknown_error_message = "An unknown error occured while making an API request")
+  def handle_http_response(response, unknown_error_message = "An unknown error occurred while making an API request")
     unless response.status == 200
       error_message = JSON.parse(response.body).dig("error_message") rescue unknown_err_message
       raise Errors::APIRequestError.new(error_message, response.status, response.body)
