@@ -76,30 +76,38 @@ To create an A2U payment using the Pi Ruby SDK, here's an overall flow you need 
 ## SDK Reference
 
 Here's a list of available methods. While there exists only one method at the moment, we will be providing more methods in the future, and this documentation will be updated accordingly.
-### `create_payment!`
+### `create_payment`
 
-A single method that takes care of the entire A2U payment flow.
+This method creates an A2U payment.
 
-These are the steps that are handled by this method under the hood:
-1. An A2U payment gets created on the Pi server
-2. A payment transaction gets built
-3. The transaction gets submitted to the Pi Blockchain
-4. A payment status gets updated to be "complete" on the Pi server
-
-- Required parameter: payment_data
+- Required parameter: `payment_data`
 
 You need to provide 4 different data and pass them as a single object to this method.
 ```ruby
-{
+payment_data = {
   "amount": number, # the amount of Pi you're paying to your user
   "memo": string, # a short memo that describes what the payment is about
   "metadata": object, # an arbitrary object that you can attach to this payment. This is for your own use. You should use this object as a way to link this payment with your internal business logic.
   "uid": string # a user uid of your app. You should have access to this value if a user has authenticated on your app.
 }
 ```
-- Response: a payment object
+- Return value: `a payment identifier (payment_id)`
 
-The method will return a payment object that looks like the following:
+### `submit_payment`
+
+This method creates a payment transaction and submits it to the Pi Blockchain.
+
+- Required parameter: `payment_id`
+- Return value: `a tranaction identifier (txid)`
+
+### `complete_payment`
+
+This method completes the payment status in the Pi server.
+
+- Required parameter: `payment_id, txid`
+- Return value: `a payment object`
+
+The method returns a payment object with the following fields:
 
 ```ruby
 payment = {
@@ -125,10 +133,11 @@ payment = {
   },
 
   # Blockchain transaction data:
-  "transaction": nil | { # This is nil if no transaction has been made yet
+  # This is nil if no transaction has been made yet
+  "transaction": {
     "txid": string, # id of the blockchain transaction
     "verified": boolean, # true if the transaction matches the payment, false otherwise
     "_link": string, # a link to the operation on the Pi Blockchain API
-  }
+  } | nil 
 }
 ```
