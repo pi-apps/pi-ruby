@@ -133,12 +133,11 @@ payment = {
   },
 
   # Blockchain transaction data:
-  # This is nil if no transaction has been made yet
-  "transaction": {
+  "transaction": nil | { # This is nil if no transaction has been made yet
     "txid": string, # id of the blockchain transaction
     "verified": boolean, # true if the transaction matches the payment, false otherwise
     "_link": string, # a link to the operation on the Pi Blockchain API
-  } | nil 
+  }
 }
 ```
 
