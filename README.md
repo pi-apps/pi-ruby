@@ -58,13 +58,19 @@ To create an A2U payment using the Pi Ruby SDK, here's an overall flow you need 
 > You'll be initializing the SDK with the Pi API Key of your app and the Private Seed of your app wallet.
 
 2. Create an A2U payment
-> `create_payment!` method will handle everything from the beginning to the end of the process.
+> You can create an A2U payment using `create_payment` method. The method will return a payment identifier (payment id).
 
-> **WARNING** Since this single method takes care of the entire process, *i.e. requesting a payment to the Pi server, submitting the transaction to the Pi blockchain and completing the payment,* it can take a few seconds, roughly less than 10 seconds, to complete the call.
+3. Store the payment identifier in your database
+> It is critical that you store the payment id, returned by `create_payment` method, in your database so that you don't double-pay the same user, by keeping track of the payment. 
 
+4. Submit the payment to the Pi Blockchain
+> You can submit the payment to the Pi blockchain using `submit_payment` method. This method will craft a payment transaction and submit it to the Pi Blockchain for you. Once submitted, the method will return a transaction identifier (txid).
 
-3. Check the payment status
-> When `create_payment!` is completed successfully, it returns the payment object you created on the Pi server. Check the `status` field to make sure everything looks correct.
+5. Store the txid in your database
+> It is strongly recommended that you store the txid along with the payment id you stored earlier for your reference.
+
+6. Complete the payment
+> After checking the transaciton with the txid you obtained, you must complete the payment, which you can do with `complete_payment` method. After completing, the method will return the payment object. Check the `status` field to make sure everything looks correct.
 
 
 ## SDK Reference
