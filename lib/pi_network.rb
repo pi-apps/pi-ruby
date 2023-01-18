@@ -12,7 +12,6 @@ class PiNetwork
   attr_reader :base_url
   attr_reader :from_address
 
-  # TODO: create PiErrors instead of StandardError and such
   def initialize(api_key, wallet_private_key, options = {})
     validate_private_seed_format!(wallet_private_key)
     @api_key = api_key
