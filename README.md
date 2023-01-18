@@ -39,7 +39,7 @@ payment_data = {
 payment_id = pi.create_payment(payment_data)
 ```
 
-3. Submit payment to the Pi Blockchain
+3. Submit the payment to the Pi Blockchain
 ```ruby
 txid = pi.submit_payment(payment_id)
 ```
