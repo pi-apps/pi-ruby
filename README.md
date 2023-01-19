@@ -36,10 +36,17 @@ payment_data = {
   "metadata": {"test": "your metadata"},
   "uid": user_uid
 }
+payment_id = pi.create_payment(payment_data)
+```
 
-# check the status of the returned payment!
-# also don't forget that this is a long-running function (~10 seconds)
-payment = pi.create_payment!(payment_data)
+3. Submit the payment to the Pi Blockchain
+```ruby
+txid = pi.submit_payment(payment_id)
+```
+
+4. Complete the payment
+```ruby
+payment = pi.complete_payment(payment_id, txid)
 ```
 
 
@@ -51,42 +58,56 @@ To create an A2U payment using the Pi Ruby SDK, here's an overall flow you need 
 > You'll be initializing the SDK with the Pi API Key of your app and the Private Seed of your app wallet.
 
 2. Create an A2U payment
-> `create_payment!` method will handle everything from the beginning to the end of the process.
+> You can create an A2U payment using `create_payment` method. The method returns a payment identifier (payment id).
 
-> **WARNING** Since this single method takes care of the entire process, *i.e. requesting a payment to the Pi server, submitting the transaction to the Pi blockchain and completing the payment,* it can take a few seconds, roughly less than 10 seconds, to complete the call.
+3. Store the payment id in your database
+> It is critical that you store the payment id, returned by `create_payment` method, in your database so that you don't double-pay the same user, by keeping track of the payment. 
 
+4. Submit the payment to the Pi Blockchain
+> You can submit the payment to the Pi Blockchain using `submit_payment` method. This method builds a payment transaction and submits it to the Pi Blockchain for you. Once submitted, the method returns a transaction identifier (txid).
 
-3. Check the payment status
-> When `create_payment!` is completed successfully, it returns the payment object you created on the Pi server. Check the `status` field to make sure everything looks correct.
+5. Store the txid in your database
+> It is strongly recommended that you store the txid along with the payment id you stored earlier for your reference.
+
+6. Complete the payment
+> After checking the transaciton with the txid you obtained, you must complete the payment, which you can do with `complete_payment` method. Upon completing, the method returns the payment object. Check the `status` field to make sure everything looks correct.
 
 
 ## SDK Reference
 
-Here's a list of available methods. While there exists only one method at the moment, we will be providing more methods in the future, and this documentation will be updated accordingly.
-### `create_payment!`
+This section shows you a list of available methods.
+### `create_payment`
 
-A single method that takes care of the entire A2U payment flow.
+This method creates an A2U payment.
 
-These are the steps that are handled by this method under the hood:
-1. An A2U payment gets created on the Pi server
-2. A payment transaction gets built
-3. The transaction gets submitted to the Pi Blockchain
-4. A payment status gets updated to be "complete" on the Pi server
-
-- Required parameter: payment_data
+- Required parameter: `payment_data`
 
 You need to provide 4 different data and pass them as a single object to this method.
 ```ruby
-{
+payment_data = {
   "amount": number, # the amount of Pi you're paying to your user
   "memo": string, # a short memo that describes what the payment is about
   "metadata": object, # an arbitrary object that you can attach to this payment. This is for your own use. You should use this object as a way to link this payment with your internal business logic.
   "uid": string # a user uid of your app. You should have access to this value if a user has authenticated on your app.
 }
 ```
-- Response: a payment object
+- Return value: `a payment identifier (payment_id)`
 
-The method will return a payment object that looks like the following:
+### `submit_payment`
+
+This method creates a payment transaction and submits it to the Pi Blockchain.
+
+- Required parameter: `payment_id`
+- Return value: `a tranaction identifier (txid)`
+
+### `complete_payment`
+
+This method completes the payment in the Pi server.
+
+- Required parameter: `payment_id, txid`
+- Return value: `a payment object`
+
+The method returns a payment object with the following fields:
 
 ```ruby
 payment = {
@@ -119,3 +140,47 @@ payment = {
   }
 }
 ```
+
+### `get_payment`
+
+This method returns a payment object if it exists.
+
+- Required parameter: `payment_id`
+- Return value: `a payment object`
+
+### `cancel_payment`
+
+This method cancels the payment in the Pi server.
+
+- Required parameter: `payment_id`
+- Return value: `a payment object`
+
+### `get_incomplete_server_payments`
+
+- Required parameter: `payment_id`
+- Return value: an array which contains 0 or 1 payment objects
+
+This method returns the latest incomplete payment which your app has created, if present.
+Use this method to troubleshoot the following error: "You need to complete the ongoing payment first to create
+a new one."
+
+If a payment is returned by this method, you must follow one of the following 3 options:
+
+1/ cancel the payment, if it is not linked with a blockchain transaction
+and you don't want to submit the transaction anymore
+
+2/ submit the transaction and complete the payment
+
+3/ if a blockchain transaction has been made, complete the payment
+
+If you do not know what this payment maps to in your business logic, you may use its `metadata` property to retrieve
+which business logic item it relates to. Remember that `metadata` is a required argument when creating a payment,
+and should be used as a way to link this payment to an item of your business logic.
+
+
+## Troubleshooting
+
+### Error when creating a payment: "You need to complete the ongoing payment first to create a new one."
+
+See documentation for the `get_incomplete_server_payments` above.
+
