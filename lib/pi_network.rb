@@ -94,12 +94,23 @@ class PiNetwork
 
   def cancel_payment(identifier)
     response = Faraday.post(
-      base_url + "/v2/payments",
-      {},
+      base_url + "/v2/payments/#{identifier}/cancel",
+      {}.to_json,
       http_headers,
     )
 
     handle_http_response(response, "An unknown error occurred while cancelling the payment")
+  end
+
+  def get_incomplete_server_payments
+    response = Faraday.get(
+      base_url + "/v2/payments/incomplete_server_payments",
+      {},
+      http_headers,
+    )
+
+    res = handle_http_response(response, "An unknown error occurred while fetching incomplete payments")
+    res["incomplete_server_payments"]
   end
 
   private

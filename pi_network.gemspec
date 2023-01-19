@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = "pi_network"
-  s.version     = "0.0.1"
+  s.version     = "1.0.0"
   s.summary     = "Pi Network Ruby"
   s.description = "Pi Network backend library for Ruby-based webservers."
   s.authors     = ["Pi Core Team"]
