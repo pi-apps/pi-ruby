@@ -157,8 +157,8 @@ This method cancels the payment in the Pi server.
 
 ### `get_incomplete_server_payments`
 
-- Required parameter: `payment_id`
-- Return value: an array which contains 0 or 1 payment objects
+- Required parameter: `none`
+- Return value: `an array which contains 0 or 1 payment object`
 
 This method returns the latest incomplete payment which your app has created, if present.
 Use this method to troubleshoot the following error: "You need to complete the ongoing payment first to create
