@@ -166,12 +166,12 @@ a new one."
 
 If a payment is returned by this method, you must follow one of the following 3 options:
 
-1/ cancel the payment, if it is not linked with a blockchain transaction
+1. cancel the payment, if it is not linked with a blockchain transaction
 and you don't want to submit the transaction anymore
 
-2/ submit the transaction and complete the payment
+2. submit the transaction and complete the payment
 
-3/ if a blockchain transaction has been made, complete the payment
+3. if a blockchain transaction has been made, complete the payment
 
 If you do not know what this payment maps to in your business logic, you may use its `metadata` property to retrieve
 which business logic item it relates to. Remember that `metadata` is a required argument when creating a payment,
