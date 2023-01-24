@@ -61,6 +61,8 @@ class PiNetwork
 
     if payment.nil? || payment["identifier"] != payment_id
       payment = get_payment(payment_id)
+      txid = payment["transaction"]["txid"]
+      raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
     end
 
     set_horizon_client(payment["network"])
