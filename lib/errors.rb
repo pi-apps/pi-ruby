@@ -17,5 +17,15 @@ class ::PiNetwork
         @payment_id = payment_id
       end
     end
+
+    class TxidAlreadyLinkedError < StandardError
+      attr_reader :payment_id
+      attr_reader :txid
+
+      def initialize(message, payment_id, txid)
+        super(message)
+        @payment_id = payment_id
+        @txid = txid
+    end
   end
 end
