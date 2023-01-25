@@ -63,7 +63,7 @@ After creating the payment, you'll get `payment_id`, which you should be storing
 txid = pi.submit_payment(payment_id)
 ```
 
-5. Store txid in your database
+5. Store the txid in your database
 
 Similarly as we did in step 3, keep the txid along with other data.
 
