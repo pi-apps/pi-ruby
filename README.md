@@ -36,11 +36,14 @@ payment_data = {
   "metadata": {"test": "your metadata"},
   "uid": user_uid
 }
+# It is critical that you store the payment_id in your database
+# so that you don't double-pay the same user, by keeping track of the payment. 
 payment_id = pi.create_payment(payment_data)
 ```
 
 3. Submit the payment to the Pi Blockchain
 ```ruby
+# It is strongly recommended that you store the txid along with the payment_id you stored earlier for your reference.
 txid = pi.submit_payment(payment_id)
 ```
 
