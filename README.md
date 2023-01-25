@@ -65,7 +65,7 @@ txid = pi.submit_payment(payment_id)
 
 5. Store the txid in your database
 
-Similarly as we did in step 3, keep the txid along with other data.
+Similarly as you did in step 3, keep the txid along with other data.
 
 | uid | product_id | amount | memo | payment_id | txid |
 | :---: | :---: | :---: | :---: | :---: | :---: |
