@@ -49,7 +49,7 @@ payment_data = {
 payment_id = pi.create_payment(payment_data)
 ```
 
-3. Store the payment id in your database
+3. Store the `payment_id` in your database
 
 After creating the payment, you'll get `payment_id`, which you should be storing in your database.
 
