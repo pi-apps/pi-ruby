@@ -59,8 +59,10 @@ class PiNetwork
   def submit_payment(payment_id)
     payment = @open_payments[payment_id]
 
-    if payment.nil?
+    if payment.nil? || payment["identifier"] != payment_id
       payment = get_payment(payment_id)
+      txid = payment["transaction"]["txid"]
+      raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
     end
 
     set_horizon_client(payment["network"])
@@ -89,6 +91,7 @@ class PiNetwork
       http_headers
     )
 
+    @open_payments.delete(identifier)
     handle_http_response(response, "An unknown error occurred while completing the payment")
   end
 
@@ -99,6 +102,7 @@ class PiNetwork
       http_headers,
     )
 
+    @open_payments.delete(identifier)
     handle_http_response(response, "An unknown error occurred while cancelling the payment")
   end
 
