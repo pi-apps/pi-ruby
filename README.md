@@ -28,12 +28,20 @@ pi = PiNetwork.new(api_key, wallet_private_seed)
 ```
 
 2. Create an A2U payment
+
+Make sure to store your payment data in your database. Here's an example of how you could keep track of the data.
+Consider this a database table example.
+
+| uid | product_id | amount | memo | payment_id | txid |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| `user_uid` | apple-pie-1 | 3.14 | Refund for apple pie | NULL | NULL |
+
 ```ruby
 user_uid = "user_uid_of_your_app"
 payment_data = {
-  "amount": 1,
-  "memo": "From app to user test",
-  "metadata": {"test": "your metadata"},
+  "amount": 3.14,
+  "memo": "Refund for apple pie",
+  "metadata": {"product_id": "apple-pie-1"}, # this is just an example
   "uid": user_uid
 }
 # It is critical that you store the payment_id in your database
@@ -41,13 +49,30 @@ payment_data = {
 payment_id = pi.create_payment(payment_data)
 ```
 
-3. Submit the payment to the Pi Blockchain
+3. Store the payment id in your database
+
+After creating the payment, you'll get `payment_id`, which you should be storing in your database.
+
+| uid | product_id | amount | memo | payment_id | txid |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| `user_uid` | apple-pie-1 | 3.14 | Refund for apple pie | `payment_id` | NULL |
+
+4. Submit the payment to the Pi Blockchain
 ```ruby
 # It is strongly recommended that you store the txid along with the payment_id you stored earlier for your reference.
 txid = pi.submit_payment(payment_id)
 ```
 
-4. Complete the payment
+5. Store txid in your database
+
+Similarly as we did in step 3, keep the txid along with other data.
+
+| uid | product_id | amount | memo | payment_id | txid |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| `user_uid` | apple-pie-1 | 3.14 | Refund for apple pie | `payment_id` | `txid` |
+
+
+6. Complete the payment
 ```ruby
 payment = pi.complete_payment(payment_id, txid)
 ```
