@@ -28,7 +28,7 @@ class ::PiNetwork
         @txid = txid
     end
 
-    class WalletPrivateKeyNotFoundError < StandardError
+    class WalletPrivateSeedNotFoundError < StandardError
     end
   end
 end

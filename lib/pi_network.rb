@@ -13,7 +13,7 @@ class PiNetwork
   attr_reader :from_address
 
   def initialize(api_key, options = {})
-    private_key = options[:wallet_private_key]
+    private_key = options[:wallet_private_seed]
     validate_private_seed_format!(private_key) if private_key.present?
     @api_key = api_key
     @account = load_account(wallet_private_key)
