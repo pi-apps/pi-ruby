@@ -58,6 +58,10 @@ class PiNetwork
   end
 
   def submit_payment(payment_id)
+    raise Errors::WalletPrivateSeedNotFoundError.new(
+      "You need to initialize the SDK with wallet_private_seed to call this method."
+    ) if self.account.nil?
+
     payment = @open_payments[payment_id]
 
     if payment.nil? || payment["identifier"] != payment_id
