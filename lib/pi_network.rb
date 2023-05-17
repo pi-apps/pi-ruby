@@ -13,10 +13,10 @@ class PiNetwork
   attr_reader :from_address
 
   def initialize(api_key, options = {})
-    private_key = options[:wallet_private_seed]
-    validate_private_seed_format!(private_key) if private_key.present?
+    wallet_private_seed = options[:wallet_private_seed]
+    validate_private_seed_format!(wallet_private_seed) if wallet_private_seed.present?
     @api_key = api_key
-    @account = load_account(wallet_private_key)
+    @account = load_account(wallet_private_seed)
     @base_url = options[:base_url] || "https://api.minepi.com"
 
     @open_payments = {}
