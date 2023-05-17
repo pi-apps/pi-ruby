@@ -27,5 +27,8 @@ class ::PiNetwork
         @payment_id = payment_id
         @txid = txid
     end
+
+    class WalletPrivateKeyNotFoundError < StandardError
+    end
   end
 end
