@@ -12,10 +12,12 @@ class PiNetwork
   attr_reader :base_url
   attr_reader :from_address
 
-  def initialize(api_key, wallet_private_key, options = {})
-    validate_private_seed_format!(wallet_private_key)
+  def initialize(api_key, options = {})
+    wallet_private_seed = options[:wallet_private_seed]
+    validate_private_seed_format!(wallet_private_seed) if wallet_private_seed.present?
+
     @api_key = api_key
-    @account = load_account(wallet_private_key)
+    @account = load_account(wallet_private_seed)
     @base_url = options[:base_url] || "https://api.minepi.com"
 
     @open_payments = {}
@@ -57,6 +59,10 @@ class PiNetwork
   end
 
   def submit_payment(payment_id)
+    raise Errors::WalletPrivateSeedNotFoundError.new(
+      "You need to initialize the SDK with wallet_private_seed to call this method."
+    ) if self.account.nil?
+
     payment = @open_payments[payment_id]
 
     if payment.nil? || payment["identifier"] != payment_id
