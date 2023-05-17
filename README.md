@@ -24,7 +24,9 @@ require 'pi_network'
 api_key = "YOUR_PI_API_KEY"
 wallet_private_seed = "S_YOUR_WALLET_PRIVATE_SEED" # starts with S
 
-pi = PiNetwork.new(api_key, wallet_private_seed)
+# Passing the wallet_private_seed at the initialize step is optional.
+# You can pass it as an option if you plan to use endpoints that require the wallet private seed.
+pi = PiNetwork.new(api_key, {wallet_private_seed: wallet_private_seed})
 ```
 
 2. Create an A2U payment
