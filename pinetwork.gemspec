@@ -10,6 +10,7 @@ Gem::Specification.new do |s|
   s.license     = "PiOS"
   s.add_runtime_dependency "stellar-sdk", "~> 0.29.0"
   s.add_runtime_dependency "faraday", "~> 0"
+  s.add_runtime_dependency "json"
   s.metadata = {
     "documentation_uri" => "https://github.com/pi-apps/pi-ruby",
   }
