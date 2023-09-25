@@ -5,11 +5,13 @@ This is a official Pi Network Ruby gem to integrate the Pi Network apps platform
 ## Install
 
 1. Add the following line to your Gemfile:
+
 ```ruby
-gem 'pi_network'
+gem 'pinetwork'
 ```
 
 2. Install the gem
+
 ```ruby
 $ bundle install
 ```
@@ -17,8 +19,9 @@ $ bundle install
 ## Example
 
 1. Initialize the SDK
+
 ```ruby
-require 'pi_network'
+require 'pinetwork'
 
 # DO NOT expose these values to public
 api_key = "YOUR_PI_API_KEY"
@@ -32,9 +35,9 @@ pi = PiNetwork.new(api_key, wallet_private_seed)
 Make sure to store your payment data in your database. Here's an example of how you could keep track of the data.
 Consider this a database table example.
 
-| uid | product_id | amount | memo | payment_id | txid |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| `user_uid` | apple-pie-1 | 3.14 | Refund for apple pie | NULL | NULL |
+|    uid     | product_id  | amount |         memo         | payment_id | txid |
+| :--------: | :---------: | :----: | :------------------: | :--------: | :--: |
+| `user_uid` | apple-pie-1 |  3.14  | Refund for apple pie |    NULL    | NULL |
 
 ```ruby
 user_uid = "user_uid_of_your_app"
@@ -45,7 +48,7 @@ payment_data = {
   "uid": user_uid
 }
 # It is critical that you store the payment_id in your database
-# so that you don't double-pay the same user, by keeping track of the payment. 
+# so that you don't double-pay the same user, by keeping track of the payment.
 payment_id = pi.create_payment(payment_data)
 ```
 
@@ -53,11 +56,12 @@ payment_id = pi.create_payment(payment_data)
 
 After creating the payment, you'll get `payment_id`, which you should be storing in your database.
 
-| uid | product_id | amount | memo | payment_id | txid |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| `user_uid` | apple-pie-1 | 3.14 | Refund for apple pie | `payment_id` | NULL |
+|    uid     | product_id  | amount |         memo         |  payment_id  | txid |
+| :--------: | :---------: | :----: | :------------------: | :----------: | :--: |
+| `user_uid` | apple-pie-1 |  3.14  | Refund for apple pie | `payment_id` | NULL |
 
 4. Submit the payment to the Pi Blockchain
+
 ```ruby
 # It is strongly recommended that you store the txid along with the payment_id you stored earlier for your reference.
 txid = pi.submit_payment(payment_id)
@@ -67,43 +71,47 @@ txid = pi.submit_payment(payment_id)
 
 Similarly as you did in step 3, keep the txid along with other data.
 
-| uid | product_id | amount | memo | payment_id | txid |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| `user_uid` | apple-pie-1 | 3.14 | Refund for apple pie | `payment_id` | `txid` |
-
+|    uid     | product_id  | amount |         memo         |  payment_id  |  txid  |
+| :--------: | :---------: | :----: | :------------------: | :----------: | :----: |
+| `user_uid` | apple-pie-1 |  3.14  | Refund for apple pie | `payment_id` | `txid` |
 
 6. Complete the payment
+
 ```ruby
 payment = pi.complete_payment(payment_id, txid)
 ```
-
 
 ## Overall flow for A2U (App-to-User) payment
 
 To create an A2U payment using the Pi Ruby SDK, here's an overall flow you need to follow:
 
 1. Initialize the SDK
-> You'll be initializing the SDK with the Pi API Key of your app and the Private Seed of your app wallet.
+
+   > You'll be initializing the SDK with the Pi API Key of your app and the Private Seed of your app wallet.
 
 2. Create an A2U payment
-> You can create an A2U payment using `create_payment` method. The method returns a payment identifier (payment id).
+
+   > You can create an A2U payment using `create_payment` method. The method returns a payment identifier (payment id).
 
 3. Store the payment id in your database
-> It is critical that you store the payment id, returned by `create_payment` method, in your database so that you don't double-pay the same user, by keeping track of the payment. 
+
+   > It is critical that you store the payment id, returned by `create_payment` method, in your database so that you don't double-pay the same user, by keeping track of the payment.
 
 4. Submit the payment to the Pi Blockchain
-> You can submit the payment to the Pi Blockchain using `submit_payment` method. This method builds a payment transaction and submits it to the Pi Blockchain for you. Once submitted, the method returns a transaction identifier (txid).
+
+   > You can submit the payment to the Pi Blockchain using `submit_payment` method. This method builds a payment transaction and submits it to the Pi Blockchain for you. Once submitted, the method returns a transaction identifier (txid).
 
 5. Store the txid in your database
-> It is strongly recommended that you store the txid along with the payment id you stored earlier for your reference.
+
+   > It is strongly recommended that you store the txid along with the payment id you stored earlier for your reference.
 
 6. Complete the payment
-> After checking the transaciton with the txid you obtained, you must complete the payment, which you can do with `complete_payment` method. Upon completing, the method returns the payment object. Check the `status` field to make sure everything looks correct.
-
+   > After checking the transaciton with the txid you obtained, you must complete the payment, which you can do with `complete_payment` method. Upon completing, the method returns the payment object. Check the `status` field to make sure everything looks correct.
 
 ## SDK Reference
 
 This section shows you a list of available methods.
+
 ### `create_payment`
 
 This method creates an A2U payment.
@@ -111,6 +119,7 @@ This method creates an A2U payment.
 - Required parameter: `payment_data`
 
 You need to provide 4 different data and pass them as a single object to this method.
+
 ```ruby
 payment_data = {
   "amount": number, # the amount of Pi you're paying to your user
@@ -119,6 +128,7 @@ payment_data = {
   "uid": string # a user uid of your app. You should have access to this value if a user has authenticated on your app.
 }
 ```
+
 - Return value: `a payment identifier (payment_id)`
 
 ### `submit_payment`
@@ -195,7 +205,7 @@ a new one."
 If a payment is returned by this method, you must follow one of the following 3 options:
 
 1. cancel the payment, if it is not linked with a blockchain transaction
-and you don't want to submit the transaction anymore
+   and you don't want to submit the transaction anymore
 
 2. submit the transaction and complete the payment
 
@@ -205,10 +215,8 @@ If you do not know what this payment maps to in your business logic, you may use
 which business logic item it relates to. Remember that `metadata` is a required argument when creating a payment,
 and should be used as a way to link this payment to an item of your business logic.
 
-
 ## Troubleshooting
 
 ### Error when creating a payment: "You need to complete the ongoing payment first to create a new one."
 
 See documentation for the `get_incomplete_server_payments` above.
-
