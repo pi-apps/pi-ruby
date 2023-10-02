@@ -26,6 +26,7 @@ class ::PiNetwork
         super(message)
         @payment_id = payment_id
         @txid = txid
+      end
     end
   end
 end
