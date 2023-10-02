@@ -81,27 +81,27 @@ class PiNetwork
     return txid
   end
 
-  def complete_payment(identifier, txid)
+  def complete_payment(payment_id, txid)
     body = {"txid": txid}
 
     response = Faraday.post(
-      base_url + "/v2/payments/#{identifier}/complete",
+      base_url + "/v2/payments/#{payment_id}/complete",
       body.to_json,
       http_headers
     )
 
-    @open_payments.delete(identifier)
+    @open_payments.delete(payment_id)
     handle_http_response(response, "An unknown error occurred while completing the payment")
   end
 
-  def cancel_payment(identifier)
+  def cancel_payment(payment_id)
     response = Faraday.post(
-      base_url + "/v2/payments/#{identifier}/cancel",
+      base_url + "/v2/payments/#{payment_id}/cancel",
       {}.to_json,
       http_headers,
     )
 
-    @open_payments.delete(identifier)
+    @open_payments.delete(payment_id)
     handle_http_response(response, "An unknown error occurred while cancelling the payment")
   end
 
