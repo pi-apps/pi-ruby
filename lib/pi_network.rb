@@ -1,5 +1,4 @@
-gem_dir = Gem::Specification.find_by_name("pinetwork").gem_dir
-require "#{gem_dir}/lib/errors"
+require_relative 'errors'
 
 class PiNetwork
   require 'faraday'
