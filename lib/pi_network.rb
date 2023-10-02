@@ -1,5 +1,5 @@
-gem_dir = Gem::Specification.find_by_name("pi_network").gem_dir
-require "#{gem_dir}/lib/errors"
+# gem_dir = Gem::Specification.find_by_name("pi_network").gem_dir
+# require "#{gem_dir}/lib/errors"
 
 class PiNetwork
   require 'faraday'
@@ -130,7 +130,7 @@ class PiNetwork
 
   def handle_http_response(response, unknown_error_message = "An unknown error occurred while making an API request")
     unless response.status == 200
-      error_message = JSON.parse(response.body).dig("error_message") rescue unknown_err_message
+      error_message = JSON.parse(response.body).dig("error_message") rescue unknown_error_message
       raise Errors::APIRequestError.new(error_message, response.status, response.body)
     end
 
