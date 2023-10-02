@@ -1,4 +1,4 @@
-gem_dir = Gem::Specification.find_by_name("pi_network").gem_dir
+gem_dir = Gem::Specification.find_by_name("pinetwork").gem_dir
 require "#{gem_dir}/lib/errors"
 
 class PiNetwork
