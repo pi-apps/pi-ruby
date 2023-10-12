@@ -1,5 +1,4 @@
-gem_dir = Gem::Specification.find_by_name("pi_network").gem_dir
-require "#{gem_dir}/lib/errors"
+require_relative 'errors'
 
 class PiNetwork
   require 'faraday'
@@ -61,7 +60,7 @@ class PiNetwork
 
     if payment.nil? || payment["identifier"] != payment_id
       payment = get_payment(payment_id)
-      txid = payment["transaction"]["txid"]
+      txid = payment["transaction"]&.dig("txid")
       raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
     end
 
@@ -82,27 +81,27 @@ class PiNetwork
     return txid
   end
 
-  def complete_payment(identifier, txid)
+  def complete_payment(payment_id, txid)
     body = {"txid": txid}
 
     response = Faraday.post(
-      base_url + "/v2/payments/#{identifier}/complete",
+      base_url + "/v2/payments/#{payment_id}/complete",
       body.to_json,
       http_headers
     )
 
-    @open_payments.delete(identifier)
+    @open_payments.delete(payment_id)
     handle_http_response(response, "An unknown error occurred while completing the payment")
   end
 
-  def cancel_payment(identifier)
+  def cancel_payment(payment_id)
     response = Faraday.post(
-      base_url + "/v2/payments/#{identifier}/cancel",
+      base_url + "/v2/payments/#{payment_id}/cancel",
       {}.to_json,
       http_headers,
     )
 
-    @open_payments.delete(identifier)
+    @open_payments.delete(payment_id)
     handle_http_response(response, "An unknown error occurred while cancelling the payment")
   end
 
@@ -130,7 +129,7 @@ class PiNetwork
 
   def handle_http_response(response, unknown_error_message = "An unknown error occurred while making an API request")
     unless response.status == 200
-      error_message = JSON.parse(response.body).dig("error_message") rescue unknown_err_message
+      error_message = JSON.parse(response.body).dig("error_message") rescue unknown_error_message
       raise Errors::APIRequestError.new(error_message, response.status, response.body)
     end
 
