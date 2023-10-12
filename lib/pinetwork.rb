@@ -16,6 +16,8 @@ class PiNetwork
     @api_key = api_key
     @account = load_account(wallet_private_key)
     @base_url = options[:base_url] || "https://api.minepi.com"
+    @mainnet_host = options[:mainnet_host] || "api.mainnet.minepi.com"
+    @testnet_host = options[:testnet_host] || "api.testnet.minepi.com"
 
     @open_payments = {}
   end
@@ -143,8 +145,9 @@ class PiNetwork
   end
 
   def set_horizon_client(network)
-    host = network == "Pi Network" ? "api.mainnet.minepi.com" : "api.testnet.minepi.com"
-    horizon = network == "Pi Network" ? "https://api.mainnet.minepi.com" : "https://api.testnet.minepi.com"
+    host = (network.starts_with? "Pi Network") ? @mainnet_host : @testnet_host
+    horizon = "https://#{host}"
+
     client = Stellar::Client.new(host: host, horizon: horizon)
     Stellar::default_network = network
 
