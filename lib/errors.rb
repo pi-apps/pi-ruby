@@ -30,10 +30,8 @@ class ::PiNetwork
     end
 
     class TxSubmissionError < StandardError
-      attr_reader :payment_id
-      def initialize(message, payment_id)
+      def initialize(message)
         super(message)
-        @payment_id = payment_id
       end
     end
   end

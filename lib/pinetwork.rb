@@ -186,10 +186,14 @@ class PiNetwork
     transaction = transaction_builder.add_operation(payment_operation).set_timeout(180000).build
   end
 
-  def submit_transaction(transaction)
+  def submit_transaction!(transaction)
     envelope = transaction.to_envelope(self.account.keypair)
-    response = self.client.submit_transaction(tx_envelope: envelope)
-    txid = response._response.body["id"]
+    begin
+      response = self.client.submit_transaction(tx_envelope: envelope)
+      txid = response._response.body["id"]
+    rescue => error
+      raise Errors::TxSubmissionError.new("")
+    end
   end
 
   def validate_payment_data!(data, options = {})
