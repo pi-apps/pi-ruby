@@ -192,7 +192,8 @@ class PiNetwork
       response = self.client.submit_transaction(tx_envelope: envelope)
       txid = response._response.body["id"]
     rescue => error
-      raise Errors::TxSubmissionError.new("")
+      result_codes = error.response&.dig(:body, "extras", "result_codes")
+      raise Errors::TxSubmissionError.new(result_codes&.dig("transaction"), result_codes&.dig("operations"))
     end
   end
 
