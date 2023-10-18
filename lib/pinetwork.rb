@@ -186,7 +186,7 @@ class PiNetwork
     transaction = transaction_builder.add_operation(payment_operation).set_timeout(180000).build
   end
 
-  def submit_transaction!(transaction)
+  def submit_transaction(transaction)
     envelope = transaction.to_envelope(self.account.keypair)
     begin
       response = self.client.submit_transaction(tx_envelope: envelope)
