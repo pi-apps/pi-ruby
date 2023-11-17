@@ -55,36 +55,39 @@ class PiNetwork
     parsed_response = handle_http_response(response, "An unknown error occurred while creating a payment")
     
     identifier = parsed_response["identifier"]
-    # @open_payments_mutex.synchronize do
+    @open_payments_mutex.synchronize do
       @open_payments[identifier] = parsed_response
-    # end
+    end
+
     return identifier
   end
 
   def submit_payment(payment_id)
-    payment = @open_payments[payment_id]
+    @open_payments_mutex.synchronize do
+      payment = @open_payments[payment_id]
 
-    if payment.nil? || payment["identifier"] != payment_id
-      payment = get_payment(payment_id)
-      txid = payment["transaction"]&.dig("txid")
-      raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
+      if payment.nil? || payment["identifier"] != payment_id
+        payment = get_payment(payment_id)
+        txid = payment["transaction"]&.dig("txid")
+        raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
+      end
+
+      set_horizon_client(payment["network"])
+      @from_address = payment["from_address"]
+
+      transaction_data = {
+        amount: payment["amount"],
+        identifier: payment["identifier"],
+        recipient: payment["to_address"]
+      }
+
+      transaction = build_a2u_transaction(transaction_data)
+      txid = submit_transaction(transaction)
+
+      @open_payments.delete(payment_id)
+
+      return txid
     end
-
-    set_horizon_client(payment["network"])
-    @from_address = payment["from_address"]
-
-    transaction_data = {
-      amount: payment["amount"],
-      identifier: payment["identifier"],
-      recipient: payment["to_address"]
-    }
-
-    transaction = build_a2u_transaction(transaction_data)
-    txid = submit_transaction(transaction)
-
-    @open_payments.delete(payment_id)
-
-    return txid
   end
 
   def complete_payment(payment_id, txid)
@@ -96,7 +99,10 @@ class PiNetwork
       http_headers
     )
 
-    @open_payments.delete(payment_id)
+    @open_payments_mutex.synchronize do
+      @open_payments.delete(payment_id)
+    end
+
     handle_http_response(response, "An unknown error occurred while completing the payment")
   end
 
@@ -107,7 +113,10 @@ class PiNetwork
       http_headers,
     )
 
-    @open_payments.delete(payment_id)
+    @open_payments_mutex.synchronize do
+      @open_payments.delete(payment_id)
+    end
+
     handle_http_response(response, "An unknown error occurred while cancelling the payment")
   end
 
