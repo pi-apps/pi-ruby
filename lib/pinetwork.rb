@@ -144,7 +144,7 @@ class PiNetwork
 
   def handle_http_response(response, unknown_error_message = "An unknown error occurred while making an API request")
     unless response.status == 200
-      error_message = JSON.parse(response.body).dig("error_message") rescue unknown_error_message
+      error_message = extract_error_message(response.body, unknown_error_message)
       raise Errors::APIRequestError.new(error_message, response.status, response.body)
     end
 
@@ -222,5 +222,9 @@ class PiNetwork
   def validate_private_seed_format!(seed)
     raise StandardError.new("Private Seed should start with \"S\"") unless seed.upcase.start_with?("S")
     raise StandardError.new("Private Seed should be 56 characters") unless seed.length == 56
+  end
+
+  def extract_error_message(response_body, default_message)
+    JSON.parse(response_body).dig("error_message") rescue default_message
   end
 end
