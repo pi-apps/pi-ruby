@@ -10,7 +10,7 @@ class A2UConcurrencyTest < Minitest::Test
     threads = []
     
     faraday_stub = Minitest::Mock.new
-    pi = PiNetwork.new(api_key, wallet_private_key, faraday_stub)
+    pi = PiNetwork.new(api_key: api_key, wallet_private_key: wallet_private_key, faraday: faraday_stub)
 
     total_threads.times do
       threads << Thread.new do
