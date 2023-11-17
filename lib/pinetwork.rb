@@ -11,7 +11,7 @@ class PiNetwork
   attr_reader :base_url
   attr_reader :from_address
 
-  def initialize(api_key, wallet_private_key, faraday = Faraday.new, options = {})
+  def initialize(api_key:, wallet_private_key:, faraday: Faraday.new, options: {})
     validate_private_seed_format!(wallet_private_key)
     @api_key = api_key
     @account = load_account(wallet_private_key)
