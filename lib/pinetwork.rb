@@ -11,13 +11,17 @@ class PiNetwork
   attr_reader :base_url
   attr_reader :from_address
 
+  BASE_URL = "https://api.minepi.com".freeze
+  MAINNET_HOST = "api.mainnet.minepi.com".freeze
+  TESTNET_HOST = "api.testnet.minepi.com".freeze
+
   def initialize(api_key:, wallet_private_key:, faraday: Faraday.new, options: {})
     validate_private_seed_format!(wallet_private_key)
     @api_key = api_key
     @account = load_account(wallet_private_key)
-    @base_url = options[:base_url] || "https://api.minepi.com"
-    @mainnet_host = options[:mainnet_host] || "api.mainnet.minepi.com"
-    @testnet_host = options[:testnet_host] || "api.testnet.minepi.com"
+    @base_url = options[:base_url] || BASE_URL
+    @mainnet_host = options[:mainnet_host] || MAINNET_HOST
+    @testnet_host = options[:testnet_host] || TESTNET_HOST
     @faraday = faraday
 
     @open_payments = {}
