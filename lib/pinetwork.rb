@@ -11,15 +11,17 @@ class PiNetwork
   attr_reader :base_url
   attr_reader :from_address
 
-  def initialize(api_key, wallet_private_key, options = {})
+  def initialize(api_key, wallet_private_key, faraday = Faraday.new, options = {})
     validate_private_seed_format!(wallet_private_key)
     @api_key = api_key
     @account = load_account(wallet_private_key)
     @base_url = options[:base_url] || "https://api.minepi.com"
     @mainnet_host = options[:mainnet_host] || "api.mainnet.minepi.com"
     @testnet_host = options[:testnet_host] || "api.testnet.minepi.com"
+    @faraday = faraday
 
     @open_payments = {}
+    @open_payments_mutex = Mutex.new
   end
 
   def get_payment(payment_id)
@@ -43,7 +45,8 @@ class PiNetwork
       payment: payment_data,
     }
 
-    response = Faraday.post(
+    # response = Faraday.post(
+    response = @faraday.post(
       base_url + "/v2/payments",
       request_body.to_json,
       http_headers,
@@ -52,8 +55,9 @@ class PiNetwork
     parsed_response = handle_http_response(response, "An unknown error occurred while creating a payment")
     
     identifier = parsed_response["identifier"]
-    @open_payments[identifier] = parsed_response
-
+    # @open_payments_mutex.synchronize do
+      @open_payments[identifier] = parsed_response
+    # end
     return identifier
   end
 
@@ -207,7 +211,7 @@ class PiNetwork
   end
 
   def validate_private_seed_format!(seed)
-    raise StandardError.new("Private Seed should start with \"S\"") unless seed.upcase.starts_with?("S")
+    raise StandardError.new("Private Seed should start with \"S\"") unless seed.upcase.start_with?("S")
     raise StandardError.new("Private Seed should be 56 characters") unless seed.length == 56
   end
 end
