@@ -49,7 +49,6 @@ class PiNetwork
       payment: payment_data,
     }
 
-    # response = Faraday.post(
     response = @faraday.post(
       base_url + "/v2/payments",
       request_body.to_json,
