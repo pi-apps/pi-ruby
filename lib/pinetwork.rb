@@ -11,15 +11,21 @@ class PiNetwork
   attr_reader :base_url
   attr_reader :from_address
 
-  def initialize(api_key, wallet_private_key, options = {})
+  BASE_URL = "https://api.minepi.com".freeze
+  MAINNET_HOST = "api.mainnet.minepi.com".freeze
+  TESTNET_HOST = "api.testnet.minepi.com".freeze
+
+  def initialize(api_key:, wallet_private_key:, faraday: Faraday.new, options: {})
     validate_private_seed_format!(wallet_private_key)
     @api_key = api_key
     @account = load_account(wallet_private_key)
-    @base_url = options[:base_url] || "https://api.minepi.com"
-    @mainnet_host = options[:mainnet_host] || "api.mainnet.minepi.com"
-    @testnet_host = options[:testnet_host] || "api.testnet.minepi.com"
+    @base_url = options[:base_url] || BASE_URL
+    @mainnet_host = options[:mainnet_host] || MAINNET_HOST
+    @testnet_host = options[:testnet_host] || TESTNET_HOST
+    @faraday = faraday
 
     @open_payments = {}
+    @open_payments_mutex = Mutex.new
   end
 
   def get_payment(payment_id)
@@ -43,7 +49,7 @@ class PiNetwork
       payment: payment_data,
     }
 
-    response = Faraday.post(
+    response = @faraday.post(
       base_url + "/v2/payments",
       request_body.to_json,
       http_headers,
@@ -52,35 +58,39 @@ class PiNetwork
     parsed_response = handle_http_response(response, "An unknown error occurred while creating a payment")
     
     identifier = parsed_response["identifier"]
-    @open_payments[identifier] = parsed_response
+    @open_payments_mutex.synchronize do
+      @open_payments[identifier] = parsed_response
+    end
 
     return identifier
   end
 
   def submit_payment(payment_id)
-    payment = @open_payments[payment_id]
+    @open_payments_mutex.synchronize do
+      payment = @open_payments[payment_id]
 
-    if payment.nil? || payment["identifier"] != payment_id
-      payment = get_payment(payment_id)
-      txid = payment["transaction"]&.dig("txid")
-      raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
+      if payment.nil? || payment["identifier"] != payment_id
+        payment = get_payment(payment_id)
+        txid = payment["transaction"]&.dig("txid")
+        raise Errors::TxidAlreadyLinkedError.new("This payment already has a linked txid", payment_id, txid) if txid.present?
+      end
+
+      set_horizon_client(payment["network"])
+      @from_address = payment["from_address"]
+
+      transaction_data = {
+        amount: payment["amount"],
+        identifier: payment["identifier"],
+        recipient: payment["to_address"]
+      }
+
+      transaction = build_a2u_transaction(transaction_data)
+      txid = submit_transaction(transaction)
+
+      @open_payments.delete(payment_id)
+
+      return txid
     end
-
-    set_horizon_client(payment["network"])
-    @from_address = payment["from_address"]
-
-    transaction_data = {
-      amount: payment["amount"],
-      identifier: payment["identifier"],
-      recipient: payment["to_address"]
-    }
-
-    transaction = build_a2u_transaction(transaction_data)
-    txid = submit_transaction(transaction)
-
-    @open_payments.delete(payment_id)
-
-    return txid
   end
 
   def complete_payment(payment_id, txid)
@@ -92,7 +102,10 @@ class PiNetwork
       http_headers
     )
 
-    @open_payments.delete(payment_id)
+    @open_payments_mutex.synchronize do
+      @open_payments.delete(payment_id)
+    end
+
     handle_http_response(response, "An unknown error occurred while completing the payment")
   end
 
@@ -103,7 +116,10 @@ class PiNetwork
       http_headers,
     )
 
-    @open_payments.delete(payment_id)
+    @open_payments_mutex.synchronize do
+      @open_payments.delete(payment_id)
+    end
+
     handle_http_response(response, "An unknown error occurred while cancelling the payment")
   end
 
@@ -131,7 +147,7 @@ class PiNetwork
 
   def handle_http_response(response, unknown_error_message = "An unknown error occurred while making an API request")
     unless response.status == 200
-      error_message = JSON.parse(response.body).dig("error_message") rescue unknown_error_message
+      error_message = extract_error_message(response.body, unknown_error_message)
       raise Errors::APIRequestError.new(error_message, response.status, response.body)
     end
 
@@ -207,7 +223,11 @@ class PiNetwork
   end
 
   def validate_private_seed_format!(seed)
-    raise StandardError.new("Private Seed should start with \"S\"") unless seed.upcase.starts_with?("S")
+    raise StandardError.new("Private Seed should start with \"S\"") unless seed.upcase.start_with?("S")
     raise StandardError.new("Private Seed should be 56 characters") unless seed.length == 56
+  end
+
+  def extract_error_message(response_body, default_message)
+    JSON.parse(response_body).dig("error_message") rescue default_message
   end
 end
