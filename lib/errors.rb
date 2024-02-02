@@ -3,6 +3,7 @@ class ::PiNetwork
     class APIRequestError < StandardError
       attr_reader :response_body
       attr_reader :response_status
+
       def initialize(message, response_status, response_body)
         super(message)
         @response_status = response_status
@@ -12,6 +13,7 @@ class ::PiNetwork
 
     class PaymentNotFoundError < StandardError
       attr_reader :payment_id
+
       def initialize(message, payment_id)
         super(message)
         @payment_id = payment_id
@@ -26,6 +28,17 @@ class ::PiNetwork
         super(message)
         @payment_id = payment_id
         @txid = txid
+      end
+    end
+
+    class TxSubmissionError < StandardError
+      attr_reader :tx_error_code
+      attr_reader :op_error_codes
+
+      def initialize(tx_error_code, op_error_codes)
+        super(message)
+        @tx_error_code = tx_error_code
+        @op_error_codes = op_error_codes
       end
     end
   end

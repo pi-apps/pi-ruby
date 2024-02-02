@@ -188,8 +188,13 @@ class PiNetwork
 
   def submit_transaction(transaction)
     envelope = transaction.to_envelope(self.account.keypair)
-    response = self.client.submit_transaction(tx_envelope: envelope)
-    txid = response._response.body["id"]
+    begin
+      response = self.client.submit_transaction(tx_envelope: envelope)
+      txid = response._response.body["id"]
+    rescue => error
+      result_codes = error.response&.dig(:body, "extras", "result_codes")
+      raise Errors::TxSubmissionError.new(result_codes&.dig("transaction"), result_codes&.dig("operations"))
+    end
   end
 
   def validate_payment_data!(data, options = {})
