@@ -185,10 +185,7 @@ class PiNetwork
     recipient = Stellar::KeyPair.from_address(transaction_data[:recipient])
     memo = Stellar::Memo.new(:memo_text, transaction_data[:identifier])
 
-    payment_operation = Stellar::Operation.payment({
-      destination: recipient,
-      amount: amount.to_payment
-    })
+    payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
     
     my_public_key = self.account.address
     sequence_number = self.client.account_info(my_public_key).sequence.to_i
