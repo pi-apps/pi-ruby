@@ -164,7 +164,7 @@ class PiNetwork
     host = (network.starts_with? "Pi Network") ? @mainnet_host : @testnet_host
     horizon = "https://#{host}"
 
-    client = Stellar::Client.new(host: host, horizon: horizon)
+    client = Stellar::Horizon::Client.new(host: host, horizon: horizon)
     Stellar::default_network = network
 
     @client = client
@@ -185,10 +185,7 @@ class PiNetwork
     recipient = Stellar::KeyPair.from_address(transaction_data[:recipient])
     memo = Stellar::Memo.new(:memo_text, transaction_data[:identifier])
 
-    payment_operation = Stellar::Operation.payment({
-      destination: recipient,
-      amount: amount.to_payment
-    })
+    payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
     
     my_public_key = self.account.address
     sequence_number = self.client.account_info(my_public_key).sequence.to_i
