@@ -80,7 +80,7 @@ class PiNetwork
       @from_address = payment["from_address"]
 
       transaction_data = {
-        amount: payment["amount"],
+        amount: BigDecimal(payment["amount"].to_s),
         identifier: payment["identifier"],
         recipient: payment["to_address"]
       }
