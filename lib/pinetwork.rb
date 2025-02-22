@@ -56,7 +56,7 @@ class PiNetwork
     )
 
     parsed_response = handle_http_response(response, "An unknown error occurred while creating a payment")
-    
+
     identifier = parsed_response["identifier"]
     @open_payments_mutex.synchronize do
       @open_payments[identifier] = parsed_response
@@ -176,7 +176,7 @@ class PiNetwork
 
   def build_a2u_transaction(transaction_data)
     raise StandardError.new("You should use a private seed of your app wallet!") if self.from_address != self.account.address
-    
+
     validate_payment_data!(transaction_data, {amount: true, identifier: true, recipient: true})
 
     amount = Stellar::Amount.new(transaction_data[:amount])
@@ -185,15 +185,22 @@ class PiNetwork
     recipient = Stellar::KeyPair.from_address(transaction_data[:recipient])
     memo = Stellar::Memo.new(:memo_text, transaction_data[:identifier])
 
+    # Add time_bounds so we can place a time limit on the transaction and try the same
+    # one multiple times (in case of Horizon server errors)
+    timeout = 30 # seconds
+    now = Time.now.to_i
+    time_bounds = Stellar::TimeBounds.new(min_time: now, max_time: now + timeout)
+
     payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
-    
+
     my_public_key = self.account.address
     sequence_number = self.client.account_info(my_public_key).sequence.to_i
     transaction_builder = Stellar::TransactionBuilder.new(
       source_account: self.account.keypair,
       sequence_number: sequence_number + 1,
       base_fee: fee,
-      memo: memo
+      memo: memo,
+      time_bounds: time_bounds
     )
 
     transaction = transaction_builder.add_operation(payment_operation).set_timeout(180000).build
@@ -204,6 +211,18 @@ class PiNetwork
     begin
       response = self.client.submit_transaction(tx_envelope: envelope)
       txid = response._response.body["id"]
+
+      if txid.present? return txid
+
+      # TODO: For now, assume txid.nil? indicates some special uncaught error state; need to see if ALL errors are
+      #       ending up with nil txid instead of raising an exception
+      raise StandardError.new("Payment submission timed out") if Time.now.to_i >= transaction.time_bounds.max_time
+
+      # Try the payment again
+      wait_seconds = 5
+      sleep wait_seconds
+
+      submit_transaction(transaction)
     rescue => error
       result_codes = error.response&.dig(:body, "extras", "result_codes")
       raise Errors::TxSubmissionError.new(result_codes&.dig("transaction"), result_codes&.dig("operations"))
