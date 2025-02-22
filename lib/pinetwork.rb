@@ -212,7 +212,7 @@ class PiNetwork
       response = self.client.submit_transaction(tx_envelope: envelope)
       txid = response._response.body["id"]
 
-      if txid.present? return txid
+      return txid if txid.present?
 
       # TODO: For now, assume txid.nil? indicates some special uncaught error state; need to see if ALL errors are
       #       ending up with nil txid instead of raising an exception
