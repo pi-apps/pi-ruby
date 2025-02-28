@@ -14,6 +14,8 @@ class PiNetwork
   BASE_URL = "https://api.minepi.com".freeze
   MAINNET_HOST = "api.mainnet.minepi.com".freeze
   TESTNET_HOST = "api.testnet.minepi.com".freeze
+  TX_SUBMISSION_TIMEOUT_SECONDS = 30
+  TX_RETRY_DELAY_SECONDS = 5
 
   def initialize(api_key:, wallet_private_key:, faraday: Faraday.new, options: {})
     validate_private_seed_format!(wallet_private_key)
@@ -84,8 +86,8 @@ class PiNetwork
         recipient: payment["to_address"]
       }
 
-      transaction = build_a2u_transaction(transaction_data)
-      txid = submit_transaction(transaction)
+      transaction, expiration = build_a2u_transaction(transaction_data)
+      txid = submit_transaction(transaction, expiration)
 
       @open_payments.delete(payment_id)
 
@@ -187,9 +189,9 @@ class PiNetwork
 
     # Add time_bounds so we can place a time limit on the transaction and try the same
     # one multiple times (in case of Horizon server errors)
-    timeout = 30 # seconds
-    now = Time.now.to_i
-    time_bounds = Stellar::TimeBounds.new(min_time: now, max_time: now + timeout)
+    now, timeout = Time.now.to_i, TX_SUBMISSION_TIMEOUT_SECONDS
+    max_time = now + timeout
+    time_bounds = Stellar::TimeBounds.new(min_time: now, max_time: max_time)
 
     payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
 
@@ -204,9 +206,13 @@ class PiNetwork
     )
 
     transaction = transaction_builder.add_operation(payment_operation).set_timeout(180000).build
+
+    # Using max_time instead of time_bounds.max_time because it seems the Stellar SDK adds a substantial offset
+    # upon initialization
+    return transaction, max_time
   end
 
-  def submit_transaction(transaction)
+  def submit_transaction(transaction, expiration)
     envelope = transaction.to_envelope(self.account.keypair)
     begin
       response = self.client.submit_transaction(tx_envelope: envelope)
@@ -214,15 +220,13 @@ class PiNetwork
 
       return txid if txid.present?
 
-      # TODO: For now, assume txid.nil? indicates some special uncaught error state; need to see if ALL errors are
-      #       ending up with nil txid instead of raising an exception
-      raise StandardError.new("Payment submission timed out") if Time.now.to_i >= transaction.time_bounds.max_time
+      # TODO: Immediately raise an error for user errors, keep trying for server-side errors
+      raise StandardError.new("Payment submission timed out") if Time.now.to_i >= expiration
 
-      # Try the payment again
-      wait_seconds = 5
-      sleep wait_seconds
+      # Wait a moment, then try the payment again
+      sleep TX_RETRY_DELAY_SECONDS
 
-      submit_transaction(transaction)
+      submit_transaction(transaction, expiration)
     rescue => error
       result_codes = error.response&.dig(:body, "extras", "result_codes")
       raise Errors::TxSubmissionError.new(result_codes&.dig("transaction"), result_codes&.dig("operations"))
