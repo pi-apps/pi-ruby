@@ -161,7 +161,7 @@ class PiNetwork
   end
 
   def set_horizon_client(network)
-    host = (network.starts_with? "Pi Network") ? @mainnet_host : @testnet_host
+    host = (network.start_with? "Pi Network") ? @mainnet_host : @testnet_host
     horizon = "https://#{host}"
 
     client = Stellar::Horizon::Client.new(host: host, horizon: horizon)
