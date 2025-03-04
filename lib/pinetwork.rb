@@ -212,6 +212,13 @@ class PiNetwork
     return transaction, max_time
   end
 
+  def parse_horizon_error_response(body)
+    result_codes = body&.dig("extras", "result_codes")
+    tx_error_code, op_error_code = result_codes&.dig("transaction"), result_codes&.dig("operations")
+
+    return tx_error_code, op_error_code
+  end
+
   def submit_transaction(transaction, expiration)
     envelope = transaction.to_envelope(self.account.keypair)
     begin
@@ -220,16 +227,31 @@ class PiNetwork
 
       return txid if txid.present?
 
-      # TODO: Immediately raise an error for user errors, keep trying for server-side errors
-      raise StandardError.new("Payment submission timed out") if Time.now.to_i >= expiration
+      status = response._response.status
+      error_type = status / 100 # 4 == client-side error; 5 == server-side error
 
-      # Wait a moment, then try the payment again
+      if error_type == 4 # Raise the error immediately; something is wrong on our end
+        tx_error_code, op_error_code = parse_horizon_error_response(response._response.body)
+        raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
+      elsif error_type != 5 # Some unexpected_status_code
+        # Hijacking TxSubmissionError here so we don't have to make a new Error for an unlikely response to encounter
+        raise Errors::TxSubmissionError.new("unexpected_response_code", [status])
+      end
+
+      # Server-side error; give the transaction another try
+      # First, make sure we haven't timed out already from a previous recursive call
+      raise Errors::TxSubmissionError.new("tx_too_late", nil) if Time.now.to_i >= expiration
+
+      # Wait a moment, then try the tx again
       sleep TX_RETRY_DELAY_SECONDS
 
       submit_transaction(transaction, expiration)
+    rescue Errors::TxSubmissionError => error
+      # No need to parse the response if we already formatted the exception in the `begin` block
+      raise error
     rescue => error
-      result_codes = error.response&.dig(:body, "extras", "result_codes")
-      raise Errors::TxSubmissionError.new(result_codes&.dig("transaction"), result_codes&.dig("operations"))
+      tx_error_code, op_error_code = parse_horizon_error_response(error.response&.dig(:body))
+      raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
     end
   end
 
