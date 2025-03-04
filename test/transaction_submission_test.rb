@@ -16,13 +16,18 @@ def set_tx_submission_timers(timeout, retry_delay)
   $VERBOSE = true
 end
 
-def setup_horizon_mock(submit_transaction_response_hash)
-  horizon_mock = mock()
-  account_info_response = OpenStruct.new(sequence: 1) # Used during build_a2u_transaction
-  submit_transaction_response = JSON.parse(submit_transaction_response_hash.to_json, { object_class: OpenStruct })
+def json_parse_to_struct(hash)
+  JSON.parse(hash.to_json, { object_class: OpenStruct })
+end
 
+def setup_horizon_mock(submit_transaction_response_hashes)
+  horizon_mock = mock()
+
+  account_info_response = OpenStruct.new(sequence: 1) # Used during build_a2u_transaction
   horizon_mock.expects(:account_info).returns(account_info_response).at_least_once
-  horizon_mock.expects(:submit_transaction).returns(submit_transaction_response).at_least_once
+
+  submit_transaction_responses = submit_transaction_response_hashes.map { |h| json_parse_to_struct(h) }
+  horizon_mock.expects(:submit_transaction).returns(*submit_transaction_responses).at_least_once
 
   horizon_mock
 end
@@ -31,7 +36,7 @@ class TransactionSubmissionTest < Minitest::Test
   attr_reader :pi, :account, :payment, :txid
 
   # TODO:
-  # test_payment_400_response
+  # test_payment_500_response
   # test_payment_timeout
 
   def setup
@@ -66,21 +71,51 @@ class TransactionSubmissionTest < Minitest::Test
     set_tx_submission_timers(30, 5)
   end
 
-  def test_user_error_response
-    submit_transaction_response = { _response: { body: { title: "Transaction Failed" }, status: 400 } }
-    horizon_mock = setup_horizon_mock(submit_transaction_response)
+  def test_server_error_response
+    submit_transaction_responses = [
+      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # Server error response first
+      { _response: { body: { "id": txid }, status: 200 } } # Then success on retry
+    ]
+    horizon_mock = setup_horizon_mock(submit_transaction_responses)
 
     pi.stubs(:client).returns(horizon_mock)
 
-    assert_raises(StandardError) { pi.submit_payment(payment["identifier"]) }
+    assert_equal(txid, pi.submit_payment(payment["identifier"]), "Returned txid does not match expected value")
+  end
+
+  def test_user_error_response
+    submit_transaction_responses = [
+      {
+        _response: {
+          body: {
+            title: "Transaction Failed",
+            extras: {
+              result_codes: {
+                transaction: "tx_failed",
+                operations: ["op_no_source_account"]
+              }
+            }
+          },
+          status: 400
+        }
+      }
+    ]
+    horizon_mock = setup_horizon_mock(submit_transaction_responses)
+
+    pi.stubs(:client).returns(horizon_mock)
+
+    error = assert_raises(PiNetwork::Errors::TxSubmissionError) { pi.submit_payment(payment["identifier"]) }
+
+    assert_equal("tx_failed", error.tx_error_code, "Raised error has wrong tx error code")
+    assert_equal(["op_no_source_account"], error.op_error_codes, "Raised error has wrong op error codes")
   end
 
   def test_success_response
-    submit_transaction_response = { _response: { body: { "id": txid }, status: 200 } }
-    horizon_mock = setup_horizon_mock(submit_transaction_response)
+    submit_transaction_responses = [{ _response: { body: { "id": txid }, status: 200 } }]
+    horizon_mock = setup_horizon_mock(submit_transaction_responses)
 
     pi.stubs(:client).returns(horizon_mock)
 
-    assert_equal(pi.submit_payment(payment["identifier"]), txid, "Returned txid does not match expected value")
+    assert_equal(txid, pi.submit_payment(payment["identifier"]), "Returned txid does not match expected value")
   end
 end
