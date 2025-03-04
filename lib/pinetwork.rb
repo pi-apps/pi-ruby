@@ -234,7 +234,7 @@ class PiNetwork
         tx_error_code, op_error_code = parse_horizon_error_response(response._response.body)
         raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
       elsif error_type != 5 # Some unexpected_status_code
-        # Hijacking TxSubmissionError here so we don't have to make a new Error for an unlikely response to encounter
+        # Repurposing TxSubmissionError here so we don't have to make a new Error for an unlikely response to encounter
         raise Errors::TxSubmissionError.new("unexpected_response_code", [status])
       end
 
