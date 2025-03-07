@@ -5,7 +5,7 @@ class A2UConcurrencyTest < Minitest::Test
   def test_concurrent_create_payment
     total_threads = 10000
     api_key = "api-key"
-    wallet_private_key = "SC2L62EYF7LYF43L4OOSKUKDESRAFJZW3UW6RFZ57UY25VAMHTL2BFER"
+    wallet_private_key = Stellar::KeyPair.random.seed
 
     threads = []
 
