@@ -1,8 +1,6 @@
 require 'minitest/autorun'
 require 'mocha/minitest'
 require 'ostruct'
-require 'json'
-require 'stellar-sdk'
 require_relative '../lib/pinetwork'
 require_relative '../lib/errors'
 
