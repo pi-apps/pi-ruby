@@ -214,7 +214,8 @@ class PiNetwork
 
   def parse_horizon_error_response(body)
     result_codes = body&.dig("extras", "result_codes")
-    tx_error_code, op_error_code = result_codes&.dig("transaction"), result_codes&.dig("operations")
+    tx_error_code = result_codes&.dig("transaction") || "unknown"
+    op_error_code = result_codes&.dig("operations") || "unknown"
 
     return tx_error_code, op_error_code
   end
