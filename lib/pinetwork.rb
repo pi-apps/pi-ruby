@@ -189,9 +189,9 @@ class PiNetwork
 
     # Add time_bounds so we can place a time limit on the transaction and try the same
     # one multiple times (in case of Horizon server errors)
-    now, timeout = Time.now.to_i, TX_SUBMISSION_TIMEOUT_SECONDS
-    max_time = now + timeout
-    time_bounds = Stellar::TimeBounds.new(min_time: now, max_time: max_time)
+    min_time = Time.now.utc.to_i
+    max_time = min_time + TX_SUBMISSION_TIMEOUT_SECONDS
+    time_bounds = Stellar::TimeBounds.new(min_time:, max_time:)
 
     payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
 
