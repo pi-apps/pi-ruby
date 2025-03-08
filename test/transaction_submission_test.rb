@@ -39,7 +39,7 @@ class TransactionSubmissionTest < Minitest::Test
 
     # Then set up the necessary data
     api_key = "api-key"
-    wallet_private_key = "SC2L62EYF7LYF43L4OOSKUKDESRAFJZW3UW6RFZ57UY25VAMHTL2BFER"
+    wallet_private_key = Stellar::KeyPair.random.seed
     @pi = PiNetwork.new(api_key: api_key, wallet_private_key: wallet_private_key)
 
     from_wallet_keypair = Stellar::KeyPair.from_seed(wallet_private_key)
