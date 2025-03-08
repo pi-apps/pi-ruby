@@ -52,7 +52,7 @@ class TransactionSubmissionTest < Minitest::Test
       "network" => "Pi Network",
       "amount" => 3.14,
       "from_address" => account.address,
-      "to_address" => "GDCTIXFMVAHYKHRH6SN5PEH5432426NTV2LYFHRP4BBGN5SR4GPCPT2A"
+      "to_address" => Stellar::KeyPair.random.address
     }
 
     @txid = "01234abcde"
