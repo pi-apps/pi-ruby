@@ -205,7 +205,7 @@ class PiNetwork
       time_bounds: time_bounds
     )
 
-    transaction = transaction_builder.add_operation(payment_operation).set_timeout(180000).build
+    transaction = transaction_builder.add_operation(payment_operation).build
 
     # Using max_time instead of time_bounds.max_time because it seems the Stellar SDK adds a substantial offset
     # upon initialization
