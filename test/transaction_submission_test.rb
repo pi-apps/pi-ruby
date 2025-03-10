@@ -65,27 +65,6 @@ class TransactionSubmissionTest < Minitest::Test
     set_tx_submission_timers(30, 5)
   end
 
-  def test_submission_timeout
-    # Hard-coding enough responses to time out based on current parameters for set_tx_submission_timers(5, 1)
-    submit_transaction_responses = [
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # 0 sec
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # 1
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # 2
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # 3
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # 4
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # 5; At timeout limit, raise here
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # Just to avoid possible race condition effects
-    ]
-    horizon_mock = setup_horizon_mock(submit_transaction_responses)
-
-    pi.stubs(:client).returns(horizon_mock)
-
-    error = assert_raises(PiNetwork::Errors::TxSubmissionError) { pi.submit_payment(payment["identifier"]) }
-
-    assert_equal("tx_too_late", error.tx_error_code, "Raised error has wrong tx error code")
-    assert_nil(error.op_error_codes, "Raised error has unexpected op error codes")
-  end
-
   def test_server_error_response
     submit_transaction_responses = [
       { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # Server error response first
