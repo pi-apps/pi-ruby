@@ -86,8 +86,8 @@ class PiNetwork
         recipient: payment["to_address"]
       }
 
-      transaction, expiration = build_a2u_transaction(transaction_data)
-      txid = submit_transaction(transaction, expiration)
+      transaction = build_a2u_transaction(transaction_data)
+      txid = submit_transaction(transaction)
 
       @open_payments.delete(payment_id)
 
@@ -206,10 +206,6 @@ class PiNetwork
     )
 
     transaction = transaction_builder.add_operation(payment_operation).build
-
-    # Using max_time instead of time_bounds.max_time because it seems the Stellar SDK adds a substantial offset
-    # upon initialization
-    return transaction, max_time
   end
 
   def parse_horizon_error_response(body)
@@ -220,7 +216,7 @@ class PiNetwork
     return tx_error_code, op_error_code
   end
 
-  def submit_transaction(transaction, expiration)
+  def submit_transaction(transaction)
     envelope = transaction.to_envelope(self.account.keypair)
     begin
       response = self.client.submit_transaction(tx_envelope: envelope)
@@ -239,14 +235,12 @@ class PiNetwork
         raise Errors::TxSubmissionError.new("unexpected_response_code", [status])
       end
 
-      # Server-side error; give the transaction another try
-      # First, make sure we haven't timed out already from a previous recursive call
-      raise Errors::TxSubmissionError.new("tx_too_late", nil) if Time.now.to_i >= expiration
-
+      # Server-side error
       # Wait a moment, then try the tx again
+      # If we're past the time bounds we'll receive a 400 response and raise an exception
       sleep TX_RETRY_DELAY_SECONDS
 
-      submit_transaction(transaction, expiration)
+      submit_transaction(transaction)
     rescue Errors::TxSubmissionError => error
       # No need to parse the response if we already formatted the exception in the `begin` block
       raise error
