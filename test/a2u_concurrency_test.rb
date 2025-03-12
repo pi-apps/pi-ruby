@@ -5,10 +5,10 @@ class A2UConcurrencyTest < Minitest::Test
   def test_concurrent_create_payment
     total_threads = 10000
     api_key = "api-key"
-    wallet_private_key = "SC2L62EYF7LYF43L4OOSKUKDESRAFJZW3UW6RFZ57UY25VAMHTL2BFER"
+    wallet_private_key = Stellar::KeyPair.random.seed
 
     threads = []
-    
+
     faraday_stub = Minitest::Mock.new
     pi = PiNetwork.new(api_key: api_key, wallet_private_key: wallet_private_key, faraday: faraday_stub)
 
@@ -22,7 +22,7 @@ class A2UConcurrencyTest < Minitest::Test
         faraday_stub.expect(:post, faraday_response) do |url|
           url == "https://api.minepi.com/v2/payments"
         end
-        
+
         payment_data = { amount: 1, memo: "test", metadata: {"info": "test"}, uid: "test-uid" }
         payment_id = pi.create_payment(payment_data)
       end
