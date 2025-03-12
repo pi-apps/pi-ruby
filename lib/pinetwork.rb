@@ -245,7 +245,7 @@ class PiNetwork
       # No need to parse the response if we already formatted the exception in the `begin` block
       raise error
     rescue => error
-      tx_error_code, op_error_code = parse_horizon_error_response(error.response&.dig(:body))
+      tx_error_code, op_error_code = parse_horizon_error_response(error&.response&.dig(:body))
       raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
     end
   end
