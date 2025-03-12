@@ -14,6 +14,8 @@ class PiNetwork
   BASE_URL = "https://api.minepi.com".freeze
   MAINNET_HOST = "api.mainnet.minepi.com".freeze
   TESTNET_HOST = "api.testnet.minepi.com".freeze
+  TX_SUBMISSION_TIMEOUT_SECONDS = 30
+  TX_RETRY_DELAY_SECONDS = 5
 
   def initialize(api_key:, wallet_private_key:, faraday: Faraday.new, options: {})
     validate_private_seed_format!(wallet_private_key)
@@ -56,7 +58,7 @@ class PiNetwork
     )
 
     parsed_response = handle_http_response(response, "An unknown error occurred while creating a payment")
-    
+
     identifier = parsed_response["identifier"]
     @open_payments_mutex.synchronize do
       @open_payments[identifier] = parsed_response
@@ -161,7 +163,7 @@ class PiNetwork
   end
 
   def set_horizon_client(network)
-    host = (network.starts_with? "Pi Network") ? @mainnet_host : @testnet_host
+    host = (network.start_with? "Pi Network") ? @mainnet_host : @testnet_host
     horizon = "https://#{host}"
 
     client = Stellar::Horizon::Client.new(host: host, horizon: horizon)
@@ -176,7 +178,7 @@ class PiNetwork
 
   def build_a2u_transaction(transaction_data)
     raise StandardError.new("You should use a private seed of your app wallet!") if self.from_address != self.account.address
-    
+
     validate_payment_data!(transaction_data, {amount: true, identifier: true, recipient: true})
 
     amount = Stellar::Amount.new(transaction_data[:amount])
@@ -185,18 +187,33 @@ class PiNetwork
     recipient = Stellar::KeyPair.from_address(transaction_data[:recipient])
     memo = Stellar::Memo.new(:memo_text, transaction_data[:identifier])
 
+    # Add time_bounds so we can place a time limit on the transaction and try the same
+    # one multiple times (in case of Horizon server errors)
+    min_time = Time.now.utc.to_i
+    max_time = min_time + TX_SUBMISSION_TIMEOUT_SECONDS
+    time_bounds = Stellar::TimeBounds.new(min_time:, max_time:)
+
     payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
-    
+
     my_public_key = self.account.address
     sequence_number = self.client.account_info(my_public_key).sequence.to_i
     transaction_builder = Stellar::TransactionBuilder.new(
       source_account: self.account.keypair,
       sequence_number: sequence_number + 1,
       base_fee: fee,
-      memo: memo
+      memo: memo,
+      time_bounds: time_bounds
     )
 
-    transaction = transaction_builder.add_operation(payment_operation).set_timeout(180000).build
+    transaction = transaction_builder.add_operation(payment_operation).build
+  end
+
+  def parse_horizon_error_response(body)
+    result_codes = body&.dig("extras", "result_codes")
+    tx_error_code = result_codes&.dig("transaction") || "unknown"
+    op_error_code = result_codes&.dig("operations") || "unknown"
+
+    return tx_error_code, op_error_code
   end
 
   def submit_transaction(transaction)
@@ -204,9 +221,32 @@ class PiNetwork
     begin
       response = self.client.submit_transaction(tx_envelope: envelope)
       txid = response._response.body["id"]
+
+      return txid if txid.present?
+
+      status = response._response.status
+      error_type = status / 100 # 4 == client-side error; 5 == server-side error
+
+      if error_type == 4 # Raise the error immediately; something is wrong on our end
+        tx_error_code, op_error_code = parse_horizon_error_response(response._response.body)
+        raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
+      elsif error_type != 5 # Some unexpected_status_code
+        # Repurposing TxSubmissionError here so we don't have to make a new Error for an unlikely response to encounter
+        raise Errors::TxSubmissionError.new("unexpected_response_code", [status])
+      end
+
+      # Server-side error
+      # Wait a moment, then try the tx again
+      # If we're past the time bounds we'll receive a 400 response and raise an exception
+      sleep TX_RETRY_DELAY_SECONDS
+
+      submit_transaction(transaction)
+    rescue Errors::TxSubmissionError => error
+      # No need to parse the response if we already formatted the exception in the `begin` block
+      raise error
     rescue => error
-      result_codes = error.response&.dig(:body, "extras", "result_codes")
-      raise Errors::TxSubmissionError.new(result_codes&.dig("transaction"), result_codes&.dig("operations"))
+      tx_error_code, op_error_code = parse_horizon_error_response(error&.response&.dig(:body))
+      raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
     end
   end
 
