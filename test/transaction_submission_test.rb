@@ -67,7 +67,9 @@ class TransactionSubmissionTest < Minitest::Test
 
   def test_server_error_response
     submit_transaction_responses = [
-      { _response: { body: { title: "Historical DB Is Too Stale" }, status: 503 } }, # Server error response first
+      # Server error response first; for some reason Horizon always responds with 200 and only puts
+      # the true error code in the body
+      { _response: { body: { "title": "Historical DB Is Too Stale", "status": 503 }, status: 200 } },
       { _response: { body: { "id": txid }, status: 200 } } # Then success on retry
     ]
     horizon_mock = setup_horizon_mock(submit_transaction_responses)
@@ -82,15 +84,16 @@ class TransactionSubmissionTest < Minitest::Test
       {
         _response: {
           body: {
-            title: "Transaction Failed",
-            extras: {
+            "title": "Transaction Failed",
+            "extras": {
               result_codes: {
                 transaction: "tx_failed",
                 operations: ["op_no_source_account"]
               }
-            }
+            },
+            "status": 400
           },
-          status: 400
+          status: 200
         }
       }
     ]

@@ -225,7 +225,7 @@ class PiNetwork
 
       return txid if txid.present?
 
-      status = response._response.status
+      status = response._response.body["status"]
       error_type = status / 100 # 4 == client-side error; 5 == server-side error
 
       if error_type == 4 # Raise the error immediately; something is wrong on our end
