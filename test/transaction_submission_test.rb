@@ -107,6 +107,33 @@ class TransactionSubmissionTest < Minitest::Test
     assert_equal(["op_no_source_account"], error.op_error_codes, "Raised error has wrong op error codes")
   end
 
+  # tx_too_early is a special case of a user-side error triggered by some asynchrony between the clock
+  # on the app servers and the horizon servers. Just give it a moment and try again.
+  def test_tx_too_early_response
+    submit_transaction_responses = [
+      {
+        _response: {
+          body: {
+            "title": "Transaction Failed",
+            "status": 400,
+            "extras": {
+              "result_codes": {
+                "transaction": "tx_too_early"
+              }
+            }
+          },
+          status: 200
+        }
+      },
+      { _response: { body: { "id": txid }, status: 200 } } # Then success on retry
+    ]
+    horizon_mock = setup_horizon_mock(submit_transaction_responses)
+
+    pi.stubs(:client).returns(horizon_mock)
+
+    assert_equal(txid, pi.submit_payment(payment["identifier"]), "Returned txid does not match expected value")
+  end
+
   def test_success_response
     submit_transaction_responses = [{ _response: { body: { "id": txid }, status: 200 } }]
     horizon_mock = setup_horizon_mock(submit_transaction_responses)
