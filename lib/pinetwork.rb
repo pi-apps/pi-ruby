@@ -228,9 +228,11 @@ class PiNetwork
       status = response._response.body["status"]
       error_type = status / 100 # 4 == client-side error; 5 == server-side error
 
-      if error_type == 4 # Raise the error immediately; something is wrong on our end
+      if error_type == 4 # Raise the error immediately; something is wrong on our end...
         tx_error_code, op_error_code = parse_horizon_error_response(response._response.body)
-        raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
+
+        # ...UNLESS it's tx_too_early...then just wait and try again as if it were a server-side error
+        raise Errors::TxSubmissionError.new(tx_error_code, op_error_code) unless tx_error_code == "tx_too_early"
       elsif error_type != 5 # Some unexpected_status_code
         # Repurposing TxSubmissionError here so we don't have to make a new Error for an unlikely response to encounter
         raise Errors::TxSubmissionError.new("unexpected_response_code", [status])
