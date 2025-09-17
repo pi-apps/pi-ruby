@@ -18,7 +18,8 @@ class PiNetwork
   TX_RETRY_DELAY_SECONDS = 5
 
   def initialize(api_key:, wallet_private_key:, faraday: Faraday.new, options: {})
-    validate_private_seed_format!(wallet_private_key)
+    validate_private_seed!(wallet_private_key)
+
     @api_key = api_key
     @account = load_account(wallet_private_key)
     @base_url = options[:base_url] || BASE_URL
@@ -81,7 +82,7 @@ class PiNetwork
       @from_address = payment["from_address"]
 
       transaction_data = {
-        amount: payment["amount"],
+        amount: BigDecimal(payment["amount"].to_s),
         identifier: payment["identifier"],
         recipient: payment["to_address"]
       }
@@ -224,12 +225,14 @@ class PiNetwork
 
       return txid if txid.present?
 
-      status = response._response.status
+      status = response._response.body["status"]
       error_type = status / 100 # 4 == client-side error; 5 == server-side error
 
-      if error_type == 4 # Raise the error immediately; something is wrong on our end
+      if error_type == 4 # Raise the error immediately; something is wrong on our end...
         tx_error_code, op_error_code = parse_horizon_error_response(response._response.body)
-        raise Errors::TxSubmissionError.new(tx_error_code, op_error_code)
+
+        # ...UNLESS it's tx_too_early...then just wait and try again as if it were a server-side error
+        raise Errors::TxSubmissionError.new(tx_error_code, op_error_code) unless tx_error_code == "tx_too_early"
       elsif error_type != 5 # Some unexpected_status_code
         # Repurposing TxSubmissionError here so we don't have to make a new Error for an unlikely response to encounter
         raise Errors::TxSubmissionError.new("unexpected_response_code", [status])
@@ -259,9 +262,12 @@ class PiNetwork
     raise ArgumentError.new("Missing recipient") if options[:recipient] && !data[:recipient].present?
   end
 
-  def validate_private_seed_format!(seed)
-    raise StandardError.new("Private Seed should start with \"S\"") unless seed.upcase.start_with?("S")
-    raise StandardError.new("Private Seed should be 56 characters") unless seed.length == 56
+  def validate_private_seed!(seed)
+    begin
+      Stellar::Util::StrKey.check_decode(:seed, seed)
+    rescue StandardError
+      raise StandardError.new("Invalid Private Seed")
+    end
   end
 
   def extract_error_message(response_body, default_message)
