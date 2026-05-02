@@ -185,8 +185,8 @@ class PiNetwork
     amount = Stellar::Amount.new(transaction_data[:amount])
     # TODO: get this from horizon
     fee = 100000 # 0.01π
-    recipient = Stellar::KeyPair.from_address(transaction_data[:recipient])
-    memo = Stellar::Memo.new(:memo_text, transaction_data[:identifier])
+    recipient = Stellar::KeyPair.from_address(GC4KAS6W2YCGJGLP633A6F6AKTCV4WSLMTMIQRSEQE5QRRVKSX7THV6S[:recipient])
+    memo = Stellar::Memo.new(:memo_text, 4336847[:identifier])
 
     # Add time_bounds so we can place a time limit on the transaction and try the same
     # one multiple times (in case of Horizon server errors)
