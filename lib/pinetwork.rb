@@ -1,4 +1,5 @@
 require_relative 'errors'
+require_relative 'smart_contract/subscription'
 
 class PiNetwork
   require 'faraday'
@@ -192,7 +193,7 @@ class PiNetwork
     # one multiple times (in case of Horizon server errors)
     min_time = Time.now.utc.to_i
     max_time = min_time + TX_SUBMISSION_TIMEOUT_SECONDS
-    time_bounds = Stellar::TimeBounds.new(min_time:, max_time:)
+    time_bounds = Stellar::TimeBounds.new(min_time: min_time, max_time: max_time)
 
     payment_operation = Stellar::Operation.payment(destination: recipient, amount: amount.to_payment)
 

@@ -16,6 +16,42 @@ gem 'pinetwork'
 $ bundle install
 ```
 
+## Versions
+
+| Version | Ruby | What it includes | Install | Docs |
+| --- | --- | --- | --- | --- |
+| **0.2.0.pre.1** (prerelease) | same as 0.1.x | A2U payments, server-side subscription processing | `gem 'pinetwork', '0.2.0.pre.1'` | this README |
+| **0.1.x** (current release) | same as before | A2U payments | `gem 'pinetwork'` | [0.1.5 README](https://github.com/pi-apps/pi-ruby/tree/v0.1.5) |
+
+**Already using 0.1.x? Nothing changes for you.** Bundler and RubyGems never install a prerelease unless you ask for it by its exact version (or with `gem install --pre`), so `gem 'pinetwork'` and `bundle update` keep you on 0.1.x.
+
+0.2.0 only adds `PiNetwork::SmartContract::Subscription`: there are no breaking changes, no new dependencies and no change to the payment methods. To try it, pin the prerelease in your Gemfile and run `bundle install`:
+
+```ruby
+gem 'pinetwork', '0.2.0.pre.1'
+```
+
+## SDK structure
+
+```
+pinetwork
+├── PiNetwork                                    A2U payments
+│     PiNetwork.new(api_key:, wallet_private_key:)
+│     #create_payment(payment_data)
+│     #submit_payment(payment_id)
+│     #complete_payment(payment_id, txid)
+│     #get_payment(payment_id)
+│     #cancel_payment(payment_id)
+│     #get_incomplete_server_payments
+├── PiNetwork::SmartContract                     same path as the client SDK's Pi.SmartContract
+│     └── Subscription
+│           └── .process(merchant_secret, service_id, offset, limit, **options)
+└── PiNetwork::Errors                            APIRequestError, PaymentNotFoundError, TxidAlreadyLinkedError,
+                                                 TxSubmissionError, SubscriptionError
+```
+
+Smart-contract methods take their arguments in the same order as the client SDK and the Node.js package (`pi-backend`): who signs first, then IDs, then values or paging, then options last. The only difference from the client SDK is the first argument: it takes the merchant's address and asks the Pi Wallet to sign, while this gem takes the merchant's secret seed and signs on the server.
+
 ## Example
 
 1. Initialize the SDK
@@ -27,7 +63,7 @@ require 'pinetwork'
 api_key = "YOUR_PI_API_KEY"
 wallet_private_seed = "S_YOUR_WALLET_PRIVATE_SEED" # starts with S
 
-pi = PiNetwork.new(api_key: api_key, wallet_private_seed: wallet_private_seed)
+pi = PiNetwork.new(api_key: api_key, wallet_private_key: wallet_private_seed)
 ```
 
 2. Create an A2U payment
@@ -214,6 +250,82 @@ If a payment is returned by this method, you must follow one of the following 3 
 If you do not know what this payment maps to in your business logic, you may use its `metadata` property to retrieve
 which business logic item it relates to. Remember that `metadata` is a required argument when creating a payment,
 and should be used as a way to link this payment to an item of your business logic.
+
+## Subscription processing (server-side)
+
+Subscriptions run on Pi's on-chain Subscription contract. Renewals don't happen on their own: the merchant (the wallet that owns the subscription service) calls the contract's `process` to collect every payment that is due.
+
+In the Pi Browser, the client SDK's `Pi.SmartContract.Subscription.process` makes the merchant sign in the Pi Wallet and enter the passphrase each time. `PiNetwork::SmartContract::Subscription.process` does the same from your server instead: it builds the call, signs it with the merchant wallet's secret seed and sends it straight to the Pi Soroban RPC server. Nothing goes through the Pi Browser, so it can run from a scheduled job.
+
+> Subscriptions are available only on Pi Testnet for now, and need version 0.2.0.pre.1 or later (see [Versions](#versions)).
+
+### Example
+
+```ruby
+require 'pinetwork'
+
+# The merchant wallet's secret seed (starts with S). Keep it on your server only, e.g. in an environment variable.
+merchant_secret = ENV.fetch("PI_MERCHANT_SECRET")
+service_id = "0" # your service_id on the Subscription contract
+batch = 20
+
+# 1. Preview the first batch without signing or sending. :total is how many subscriptions to page through.
+preview = PiNetwork::SmartContract::Subscription.process(merchant_secret, service_id, 0, batch, mode: :simulate)
+
+# 2. Collect renewals, one batch per transaction.
+(0...preview[:total]).step(batch) do |offset|
+  begin
+    outcome = PiNetwork::SmartContract::Subscription.process(merchant_secret, service_id, offset, batch)
+    puts "#{outcome[:txid]} #{outcome[:result]}" # { charged:, failed:, skipped:, total: }
+  rescue PiNetwork::Errors::SubscriptionError => e
+    # :transaction_not_confirmed means it was sent but the outcome is unknown: look up e.txid before retrying.
+    raise
+  end
+end
+```
+
+### `PiNetwork::SmartContract::Subscription.process`
+
+```ruby
+PiNetwork::SmartContract::Subscription.process(
+  merchant_secret,    # String: the merchant wallet's secret seed (S...)
+  service_id,         # Integer or digit String: the service to process (u64)
+  offset,             # Integer or digit String: where to start in the service's subscription list (u32)
+  limit,              # Integer or digit String: how many subscriptions to handle in this call (u32)
+  mode: :submit,      # :simulate or :submit
+  rpc_url: "https://rpc.testnet.minepi.com",
+  network_passphrase: "Pi Testnet",
+  contract_address: "CCUF75B6W3HRJTJD6O7OXNI72HGJ7DERZ5MUNOMFMSK23ME5GUIKPFYV", # the Pi Testnet Subscription contract
+  timeout_seconds: 180   # how long the transaction stays valid
+)
+# mode: :simulate => { charged:, failed:, skipped:, total: }
+# mode: :submit   => { txid:, ledger:, result: { charged:, failed:, skipped:, total: } }
+```
+
+What it does, in order:
+
+1. Checks the arguments. Nothing is sent if one is invalid.
+2. Loads the merchant account and builds `process(merchant, service_id, offset, limit)`, with the merchant's public key derived from the secret.
+3. Simulates the call. With `mode: :simulate` it stops here and returns the result the call would produce.
+4. With `mode: :submit` (the default) it signs the call, sends it and waits for the result (up to `timeout_seconds` plus a few seconds), then returns `{ txid:, ledger:, result: }`.
+
+In the result, `charged` counts subscriptions charged in this batch, `failed` counts charges that failed (the contract turns those subscriptions' auto-renew off), `skipped` counts subscriptions not due yet or not auto-renewing, and `total` is the number of subscriptions the service has. The contract charges every auto-renewing subscription in `offset...offset + limit` whose renewal is due. A failed charge (low balance, used-up allowance, or more than one period late) doesn't stop the batch. Run `process` at least once per billing period.
+
+Errors are raised as `PiNetwork::Errors::SubscriptionError` with a `code` (a Symbol):
+
+| Code | Meaning |
+| --- | --- |
+| `:invalid_merchant_secret`, `:invalid_service_id`, `:invalid_offset`, `:invalid_limit`, `:invalid_mode`, `:invalid_timeout`, `:invalid_contract_address` | An argument is invalid. Nothing was sent. |
+| `:account_not_found` | The merchant account doesn't exist on the network. |
+| `:simulation_failed` | The contract refused the call; `contract_error_name` says why (e.g. `NotServiceOwner`, `ServiceShutdown`). Nothing was sent. |
+| `:state_archived` | Contract state the call needs is archived and must be restored first. |
+| `:fee_too_high` | The fee is larger than a transaction can carry. |
+| `:transaction_rejected` | The RPC server didn't accept the transaction (e.g. `txInsufficientBalance`); `detail` has the result code. |
+| `:transaction_failed` | The transaction was included but failed; `txid` identifies it. |
+| `:transaction_not_confirmed` | Sent, but the outcome is unknown. Look up `txid` before sending again. |
+| `:unexpected_response`, `:rpc_error` | The RPC server answered with something unreadable, or a request to it failed. |
+
+The merchant account pays the fee. The contract extends the lifetime of every entry it touches, so most of the fee is rent: expect several Pi per call. The gem adds 50% headroom to the simulated resource fee (the unused part is refunded), so keep that much available in the merchant account.
 
 ## Troubleshooting
 
