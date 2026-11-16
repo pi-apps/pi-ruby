@@ -43,6 +43,13 @@ class PiNetwork
       # mode: :submit (default) signs, sends, waits and returns { txid:, ledger:, result: }.
       # mode: :simulate returns the result the call would produce, without signing or sending.
       # result is { charged:, failed:, skipped:, total: }.
+      #
+      # The call uses the merchant account's next sequence number. If the same wallet also sends other transactions
+      # (for example A2U payments with PiNetwork created from the same seed), don't run them at the same time as
+      # process: two transactions built on the same sequence number can't both land. When process loses, the RPC
+      # server drops it after accepting it, and it ends in :transaction_not_confirmed (detail "NOT_FOUND") once its
+      # validity window has passed; that batch did not run and can be run again. Run them one after the other, or
+      # use separate wallets.
       def self.process(merchant_secret, service_id, offset, limit,
                        mode: :submit,
                        rpc_url: RPC_URL,
@@ -58,6 +65,10 @@ class PiNetwork
         raise SubscriptionError.new(:invalid_mode) unless MODES.include?(mode)
         unless timeout_seconds.is_a?(Integer) && timeout_seconds.positive?
           raise SubscriptionError.new(:invalid_timeout)
+        end
+        raise SubscriptionError.new(:invalid_rpc_url) unless rpc_url.is_a?(String) && rpc_url.match?(%r{\Ahttps?://\S+\z})
+        unless network_passphrase.is_a?(String) && !network_passphrase.empty?
+          raise SubscriptionError.new(:invalid_network_passphrase)
         end
         contract_id = Xdr.decode_contract_address(contract_address)
         raise SubscriptionError.new(:invalid_contract_address) unless contract_id
@@ -82,16 +93,13 @@ class PiNetwork
 
         unsigned = build.call(fee: INCLUSION_FEE)
         simulation = rpc.simulate(Xdr.envelope(unsigned, Xdr.transaction_hash(network_passphrase, unsigned)))
-        result = Xdr.read_symbol_u32_map(Xdr.decode64(simulation["results"][0]["xdr"]))
-        result = process_result(result)
+        result = process_result(simulation_result_map(simulation))
         return result if mode == :simulate
 
-        resource_fee = Integer(simulation["minResourceFee"]) * RESOURCE_FEE_MARGIN_PERCENT / 100
+        resource_fee, soroban_data, auth = read_simulation(simulation)
         fee = INCLUSION_FEE + resource_fee
         raise SubscriptionError.new(:fee_too_high, detail: "#{fee} stroops") if fee > U32_MAX
 
-        soroban_data = Xdr.with_resource_fee(Xdr.decode64(simulation["transactionData"]), resource_fee)
-        auth = Array(simulation["results"][0]["auth"]).map { |entry| Xdr.decode64(entry) }
         signed = build.call(fee: fee, auth: auth, soroban_data: soroban_data)
         tx_hash_bytes = Xdr.transaction_hash(network_passphrase, signed)
         txid = tx_hash_bytes.unpack1("H*")
@@ -122,13 +130,35 @@ class PiNetwork
       end
       private_class_method :to_uint
 
+      # Every count is a u32, so anything else (a missing key, nil, a String) is not a ProcessResult.
       def self.process_result(map)
-        { charged: map.fetch("charged"), failed: map.fetch("failed"),
-          skipped: map.fetch("skipped"), total: map.fetch("total") }
+        result = { charged: map.fetch("charged"), failed: map.fetch("failed"),
+                   skipped: map.fetch("skipped"), total: map.fetch("total") }
+        return result if result.values.all? { |value| value.is_a?(Integer) }
+
+        raise SubscriptionError.new(:unexpected_response, detail: "Not a ProcessResult: #{map.inspect}")
       rescue KeyError, NoMethodError
         raise SubscriptionError.new(:unexpected_response, detail: "Not a ProcessResult: #{map.inspect}")
       end
       private_class_method :process_result
+
+      def self.simulation_result_map(simulation)
+        Xdr.read_symbol_u32_map(Xdr.decode64(simulation["results"][0]["xdr"]))
+      rescue ArgumentError, NoMethodError => e
+        raise SubscriptionError.new(:unexpected_response, detail: "Simulation result: #{e.message}")
+      end
+      private_class_method :simulation_result_map
+
+      # [resource fee with headroom, soroban data carrying that fee, auth entries]
+      def self.read_simulation(simulation)
+        resource_fee = Integer(simulation["minResourceFee"]) * RESOURCE_FEE_MARGIN_PERCENT / 100
+        soroban_data = Xdr.with_resource_fee(Xdr.decode64(simulation["transactionData"]), resource_fee)
+        auth = Array(simulation["results"][0]["auth"]).map { |entry| Xdr.decode64(entry) }
+        [resource_fee, soroban_data, auth]
+      rescue ArgumentError, TypeError, NoMethodError => e
+        raise SubscriptionError.new(:unexpected_response, detail: "Simulation: #{e.message}")
+      end
+      private_class_method :read_simulation
 
       # Reads "Error(Contract, #N)" out of an RPC error text.
       def self.contract_error(text)
@@ -153,6 +183,8 @@ class PiNetwork
           raise SubscriptionError.new(:account_not_found) unless entry
 
           Integer(entry.dig("dataJson", "account", "seq_num"))
+        rescue ArgumentError, TypeError => e
+          raise SubscriptionError.new(:unexpected_response, detail: "Account sequence: #{e.message}")
         end
 
         def simulate(envelope)

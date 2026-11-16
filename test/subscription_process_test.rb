@@ -120,13 +120,39 @@ class SubscriptionProcessTest < Minitest::Test
       invalid_limit: -> { Subscription.process(@merchant.seed, 7, 0, 2**32, faraday: fake) },
       invalid_mode: -> { Subscription.process(@merchant.seed, 7, 0, 20, mode: :sign, faraday: fake) },
       invalid_timeout: -> { Subscription.process(@merchant.seed, 7, 0, 20, timeout_seconds: 0, faraday: fake) },
-      invalid_contract_address: -> { Subscription.process(@merchant.seed, 7, 0, 20, contract_address: @merchant.address, faraday: fake) }
+      invalid_contract_address: -> { Subscription.process(@merchant.seed, 7, 0, 20, contract_address: @merchant.address, faraday: fake) },
+      invalid_rpc_url: -> { Subscription.process(@merchant.seed, 7, 0, 20, rpc_url: "rpc.example", faraday: fake) },
+      invalid_network_passphrase: -> { Subscription.process(@merchant.seed, 7, 0, 20, network_passphrase: "", faraday: fake) }
     }.each do |code, call|
       assert_error(code) { call.call }
     end
     assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, "", 0, 20, faraday: fake) }
     assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, (2**64).to_s, 0, 20, faraday: fake) }
     assert_empty fake.requests
+  end
+
+  def test_accepts_digit_strings_and_large_integers_for_every_integer_argument
+    fake = rpc
+    Subscription.process(@merchant.seed, (2**64 - 1).to_s, "20", "10", mode: "simulate", faraday: fake)
+    envelope = Xdr.decode64(fake.calls("simulateTransaction").first.dig("params", "transaction"))
+    assert_includes envelope, Xdr.sc_u64(2**64 - 1) + Xdr.sc_u32(20) + Xdr.sc_u32(10)
+  end
+
+  def test_reports_a_result_that_is_not_a_process_result_as_unexpected_response
+    not_a_map = rpc("simulateTransaction" => {
+                      "results" => [{ "xdr" => Xdr.encode64(Xdr.int32(Xdr::SCV_SYMBOL)), "auth" => [] }],
+                      "transactionData" => soroban_data(1000), "minResourceFee" => "1000"
+                    })
+    assert_error(:unexpected_response) { Subscription.process(@merchant.seed, 7, 0, 20, mode: :simulate, faraday: not_a_map) }
+
+    missing_counts = rpc("getTransaction" => {
+                           "status" => "SUCCESS", "ledger" => 101,
+                           "resultMetaJson" => { "v4" => { "soroban_meta" => { "return_value" => { "map" => [] } } } }
+                         })
+    assert_error(:unexpected_response) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: missing_counts) }
+
+    bad_sequence = rpc("getLedgerEntries" => { "entries" => [{ "dataJson" => { "account" => {} } }] })
+    assert_error(:unexpected_response) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: bad_sequence) }
   end
 
   def test_reports_a_missing_merchant_account

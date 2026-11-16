@@ -41,6 +41,8 @@ class ::PiNetwork
         invalid_limit: "Limit must be an integer in 0..4294967295.",
         invalid_mode: "Mode must be :simulate or :submit.",
         invalid_timeout: "timeout_seconds must be a positive integer.",
+        invalid_rpc_url: "rpc_url must be an http(s) URL.",
+        invalid_network_passphrase: "network_passphrase must be a non-empty String.",
         invalid_contract_address: "Contract address must be a contract address (C...).",
         account_not_found: "The merchant account does not exist on this network.",
         state_archived: "Contract state needed by this call is archived and must be restored first.",
