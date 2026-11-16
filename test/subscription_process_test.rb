@@ -80,7 +80,7 @@ class SubscriptionProcessTest < Minitest::Test
   # Splits a TransactionEnvelope with one signature into transaction bytes and the signature.
   def unwrap_envelope(base64)
     bytes = Xdr.decode64(base64)
-    [bytes[4...-(4 + 4 + 4 + 64)], bytes[-64..]]
+    [bytes[4...-(4 + 4 + 4 + 64)], bytes[-64..-1]]
   end
 
   def test_simulate_calls_process_on_the_contract_and_returns_the_result_without_sending
