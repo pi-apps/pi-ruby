@@ -1,5 +1,6 @@
 require 'faraday'
 require 'json'
+require 'uri'
 require 'stellar-sdk'
 require_relative '../errors'
 require_relative 'xdr'
@@ -46,10 +47,11 @@ class PiNetwork
       #
       # The call uses the merchant account's next sequence number. If the same wallet also sends other transactions
       # (for example A2U payments with PiNetwork created from the same seed), don't run them at the same time as
-      # process: two transactions built on the same sequence number can't both land. When process loses, the RPC
-      # server drops it after accepting it, and it ends in :transaction_not_confirmed (detail "NOT_FOUND") once its
-      # validity window has passed; that batch did not run and can be run again. Run them one after the other, or
-      # use separate wallets.
+      # process: two transactions built on the same sequence number can't both land. When process loses, it fails
+      # with :transaction_rejected (detail "txBadSeq") if the other transaction had already landed when it was sent,
+      # or the RPC server drops it after accepting it and it ends in :transaction_not_confirmed (detail "NOT_FOUND")
+      # once its validity window has passed. Either way that batch did not run and can be run again. Run them one
+      # after the other, or use separate wallets.
       def self.process(merchant_secret, service_id, offset, limit,
                        mode: :submit,
                        rpc_url: RPC_URL,
@@ -66,14 +68,15 @@ class PiNetwork
         unless timeout_seconds.is_a?(Integer) && timeout_seconds.positive?
           raise SubscriptionError.new(:invalid_timeout)
         end
-        raise SubscriptionError.new(:invalid_rpc_url) unless rpc_url.is_a?(String) && rpc_url.match?(%r{\Ahttps?://\S+\z})
+        rpc_uri = http_uri(rpc_url)
+        raise SubscriptionError.new(:invalid_rpc_url) unless rpc_uri
         unless network_passphrase.is_a?(String) && !network_passphrase.empty?
           raise SubscriptionError.new(:invalid_network_passphrase)
         end
         contract_id = Xdr.decode_contract_address(contract_address)
         raise SubscriptionError.new(:invalid_contract_address) unless contract_id
 
-        rpc = Rpc.new(rpc_url, faraday)
+        rpc = Rpc.new(rpc_uri.to_s, faraday)
         source = keypair.raw_public_key
         sequence = rpc.account_sequence(source) + 1
         min_time = 0
@@ -109,7 +112,7 @@ class PiNetwork
         # can no longer be included.
         outcome = rpc.wait_for_transaction(txid, deadline: max_time + 10)
 
-        { txid: txid, ledger: outcome[:ledger], result: process_result(outcome[:return_value]) }
+        { txid: txid, ledger: outcome[:ledger], result: process_result(outcome[:return_value], txid: txid) }
       end
 
       def self.merchant_keypair(merchant_secret)
@@ -130,15 +133,27 @@ class PiNetwork
       end
       private_class_method :to_uint
 
-      # Every count is a u32, so anything else (a missing key, nil, a String) is not a ProcessResult.
-      def self.process_result(map)
+      # An http(s) URI with a host (the scheme comes back lower-cased), or nil.
+      def self.http_uri(value)
+        return nil unless value.is_a?(String)
+
+        uri = URI.parse(value)
+        %w[http https].include?(uri.scheme) && !uri.host.to_s.empty? ? uri : nil
+      rescue URI::InvalidURIError
+        nil
+      end
+      private_class_method :http_uri
+
+      # Every count is a u32, so anything else (a missing key, nil, a String) is not a ProcessResult. txid is set
+      # once the transaction has been sent, so an unreadable result still says which transaction it was.
+      def self.process_result(map, txid: nil)
         result = { charged: map.fetch("charged"), failed: map.fetch("failed"),
                    skipped: map.fetch("skipped"), total: map.fetch("total") }
         return result if result.values.all? { |value| value.is_a?(Integer) }
 
-        raise SubscriptionError.new(:unexpected_response, detail: "Not a ProcessResult: #{map.inspect}")
+        raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Not a ProcessResult: #{map.inspect}")
       rescue KeyError, NoMethodError
-        raise SubscriptionError.new(:unexpected_response, detail: "Not a ProcessResult: #{map.inspect}")
+        raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Not a ProcessResult: #{map.inspect}")
       end
       private_class_method :process_result
 
@@ -183,7 +198,7 @@ class PiNetwork
           raise SubscriptionError.new(:account_not_found) unless entry
 
           Integer(entry.dig("dataJson", "account", "seq_num"))
-        rescue ArgumentError, TypeError => e
+        rescue ArgumentError, TypeError, NoMethodError => e
           raise SubscriptionError.new(:unexpected_response, detail: "Account sequence: #{e.message}")
         end
 
@@ -224,12 +239,9 @@ class PiNetwork
               result = call("getTransaction", { hash: txid, xdrFormat: "json" })
               case result["status"]
               when "SUCCESS"
-                meta = result["resultMetaJson"].values.first
-                return { ledger: result["ledger"], return_value: json_symbol_u32_map(meta.dig("soroban_meta", "return_value")) }
+                return { ledger: result["ledger"], return_value: success_return_value(result, txid) }
               when "FAILED"
-                code = result.dig("resultJson", "result")
-                code = code.keys.first if code.is_a?(Hash)
-                raise SubscriptionError.new(:transaction_failed, txid: txid, detail: code.to_s)
+                raise SubscriptionError.new(:transaction_failed, txid: txid, detail: failed_result_code(result))
               else
                 last_detail = result["status"]
               end
@@ -247,6 +259,31 @@ class PiNetwork
         end
 
         private
+
+        # The ProcessResult a successful transaction returned. Like the Node.js package, a success without a return
+        # value is :transaction_not_confirmed; anything unreadable is :unexpected_response. Both keep the txid.
+        def success_return_value(result, txid)
+          meta = result["resultMetaJson"]
+          meta = meta.values.first if meta.is_a?(Hash)
+          value = meta.dig("soroban_meta", "return_value") if meta.is_a?(Hash)
+          unless value
+            raise SubscriptionError.new(:transaction_not_confirmed, txid: txid,
+                                                                    detail: "The transaction succeeded but returned no value.")
+          end
+
+          json_symbol_u32_map(value)
+        rescue TypeError, NoMethodError => e
+          raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Transaction result: #{e.message}")
+        end
+
+        # The failed transaction's result code, e.g. "tx_failed", or nil when it can't be read.
+        def failed_result_code(result)
+          code = result.dig("resultJson", "result")
+          code = code.keys.first if code.is_a?(Hash)
+          code&.to_s
+        rescue TypeError
+          nil
+        end
 
         # { "map": [{ "key": { "symbol": "charged" }, "val": { "u32": 0 } }, ...] } -> { "charged" => 0, ... }
         def json_symbol_u32_map(value)

@@ -10,14 +10,16 @@ SubscriptionError = PiNetwork::Errors::SubscriptionError
 # A Faraday stand-in for the Soroban RPC server: answers each JSON-RPC method from a table of handlers and records
 # every request, so a test can inspect what was sent.
 class FakeRpc
-  attr_reader :requests
+  attr_reader :requests, :urls
 
   def initialize(handlers)
     @handlers = handlers
     @requests = []
+    @urls = []
   end
 
-  def post(_url, body, _headers)
+  def post(url, body, _headers)
+    @urls << url
     request = JSON.parse(body)
     @requests << request
     handler = @handlers.fetch(request["method"]) { raise "unexpected RPC call #{request['method']}" }
@@ -128,6 +130,9 @@ class SubscriptionProcessTest < Minitest::Test
     end
     assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, "", 0, 20, faraday: fake) }
     assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, (2**64).to_s, 0, 20, faraday: fake) }
+    ["ftp://rpc.example", "http://", "http://rpc example", nil].each do |url|
+      assert_error(:invalid_rpc_url) { Subscription.process(@merchant.seed, 7, 0, 20, rpc_url: url, faraday: fake) }
+    end
     assert_empty fake.requests
   end
 
@@ -136,6 +141,24 @@ class SubscriptionProcessTest < Minitest::Test
     Subscription.process(@merchant.seed, (2**64 - 1).to_s, "20", "10", mode: "simulate", faraday: fake)
     envelope = Xdr.decode64(fake.calls("simulateTransaction").first.dig("params", "transaction"))
     assert_includes envelope, Xdr.sc_u64(2**64 - 1) + Xdr.sc_u32(20) + Xdr.sc_u32(10)
+  end
+
+  def test_sends_to_the_rpc_url_with_its_scheme_lower_cased
+    fake = rpc
+    Subscription.process(@merchant.seed, 7, 0, 20, mode: :simulate, rpc_url: "HTTPS://RPC.example/rpc", faraday: fake)
+    assert_equal ["https://RPC.example/rpc"], fake.urls.uniq
+  end
+
+  def test_keeps_the_txid_when_a_sent_transaction_succeeds_without_a_readable_result
+    { nil => :transaction_not_confirmed,
+      { "v4" => { "soroban_meta" => {} } } => :transaction_not_confirmed,
+      { "v4" => { "soroban_meta" => { "return_value" => { "map" => [] } } } } => :unexpected_response,
+      { "v4" => { "soroban_meta" => { "return_value" => { "map" => ["not an entry"] } } } } => :unexpected_response }.each do |meta, code|
+      fake = rpc("getTransaction" => { "status" => "SUCCESS", "ledger" => 101, "resultMetaJson" => meta })
+      error = assert_error(code) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+      transaction, = unwrap_envelope(fake.calls("sendTransaction").first.dig("params", "transaction"))
+      assert_equal Xdr.transaction_hash("Pi Testnet", transaction).unpack1("H*"), error.txid, "for #{meta.inspect}"
+    end
   end
 
   def test_reports_a_result_that_is_not_a_process_result_as_unexpected_response
