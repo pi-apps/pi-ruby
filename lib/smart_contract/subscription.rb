@@ -28,13 +28,14 @@ class PiNetwork
       SEQUENCE_MAX = 2**63 - 2
       MODES = %i[simulate submit].freeze
 
-      # Contract error codes of the subscription contract (PiCoreTeam/pi-smartcontracts, contracts/subscription).
+      # Contract error codes of the subscription contract as deployed on Pi Testnet (v1, CCUF75B6...); any other code
+      # is reported as UnknownError.
       CONTRACT_ERRORS = {
         1 => "InvalidPrice", 2 => "InvalidPeriod", 3 => "AlreadySubscribed", 4 => "SubscriptionNotFound",
         5 => "ServiceNotFound", 6 => "Unauthorized", 7 => "AlreadyCancelled", 8 => "TimestampOverflow",
         9 => "NotServiceOwner", 10 => "InvalidServiceName", 11 => "SubscriptionExpired", 12 => "ServiceNotActive",
         13 => "NoAdminProposed", 14 => "NotProposedAdmin", 15 => "NoUpgradeProposed",
-        16 => "UpgradeTimelockNotElapsed", 17 => "UpgradeAlreadyPending", 18 => "ServiceShutdown"
+        16 => "UpgradeTimelockNotElapsed", 17 => "UpgradeAlreadyPending"
       }.freeze
 
       SubscriptionError = PiNetwork::Errors::SubscriptionError

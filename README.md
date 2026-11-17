@@ -320,7 +320,7 @@ Errors are raised as `PiNetwork::Errors::SubscriptionError` with a `code` (a Sym
 | --- | --- |
 | `:invalid_merchant_secret`, `:invalid_service_id`, `:invalid_offset`, `:invalid_limit`, `:invalid_mode`, `:invalid_timeout`, `:invalid_rpc_url`, `:invalid_network_passphrase`, `:invalid_contract_address` | An argument is invalid. Nothing was sent. |
 | `:account_not_found` | The merchant account doesn't exist on the network. |
-| `:simulation_failed` | The contract refused the call; `contract_error_name` says why (e.g. `NotServiceOwner`, `ServiceShutdown`). Nothing was sent. |
+| `:simulation_failed` | The contract refused the call; `contract_error_name` says why (e.g. `NotServiceOwner`, `ServiceNotFound`). Nothing was sent. |
 | `:state_archived` | Contract state the call needs is archived and must be restored first. |
 | `:fee_too_high` | The fee is larger than a transaction can carry. |
 | `:transaction_rejected` | The RPC server didn't accept the transaction (e.g. `txInsufficientBalance`); `detail` has the result code. |
