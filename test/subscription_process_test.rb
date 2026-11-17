@@ -160,8 +160,8 @@ module SubscriptionProcessTests
     end
 
     def test_keeps_the_txid_when_a_sent_transaction_succeeds_without_a_readable_result
-      { nil => :transaction_not_confirmed,
-        { "v4" => { "soroban_meta" => {} } } => :transaction_not_confirmed,
+      { nil => :unexpected_response,
+        { "v4" => { "soroban_meta" => {} } } => :unexpected_response,
         { "v4" => { "soroban_meta" => { "return_value" => { "map" => [] } } } } => :unexpected_response,
         { "v4" => { "soroban_meta" => { "return_value" => { "map" => ["not an entry"] } } } } => :unexpected_response }.each do |meta, code|
         fake = rpc("getTransaction" => { "status" => "SUCCESS", "ledger" => 101, "resultMetaJson" => meta })
@@ -312,6 +312,54 @@ module SubscriptionProcessTests
         OpenStruct.new(status: response.status, body: JSON.parse(response.body))
       end
       assert_equal RESULT, Subscription.process(@merchant.seed, 7, 0, 20, mode: :simulate, faraday: parsed)
+    end
+
+    def test_rejects_strings_with_invalid_encoding_as_invalid_arguments
+      fake = rpc
+      bad = "\xff".dup.force_encoding("UTF-8")
+      assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, bad, 0, 20, faraday: fake) }
+      assert_error(:invalid_offset) { Subscription.process(@merchant.seed, 7, bad, 20, faraday: fake) }
+      assert_error(:invalid_limit) { Subscription.process(@merchant.seed, 7, 0, bad, faraday: fake) }
+      assert_error(:invalid_mode) { Subscription.process(@merchant.seed, 7, 0, 20, mode: bad, faraday: fake) }
+      assert_empty fake.requests
+    end
+
+    def test_reports_archived_state_and_a_fee_too_large_before_sending
+      archived = rpc("simulateTransaction" => {
+                       "results" => [{ "xdr" => process_result_xdr, "auth" => [] }], "transactionData" => soroban_data(1000),
+                       "minResourceFee" => "1000", "restorePreamble" => { "minResourceFee" => "10", "transactionData" => soroban_data(10) }
+                     })
+      assert_error(:state_archived) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: archived) }
+
+      huge = rpc("simulateTransaction" => {
+                   "results" => [{ "xdr" => process_result_xdr, "auth" => [] }], "transactionData" => soroban_data(1000),
+                   "minResourceFee" => (2**32).to_s
+                 })
+      assert_error(:fee_too_high) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: huge) }
+      assert_empty huge.calls("sendTransaction")
+    end
+
+    def test_treats_try_again_later_as_rejected_and_duplicate_as_accepted
+      fake = rpc("sendTransaction" => { "status" => "TRY_AGAIN_LATER" })
+      error = assert_error(:transaction_rejected) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+      assert_equal "TRY_AGAIN_LATER", error.detail
+      refute_nil error.txid
+      assert_empty fake.calls("getTransaction")
+
+      fake = rpc("sendTransaction" => { "status" => "DUPLICATE" })
+      assert_equal RESULT, Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake)[:result]
+    end
+
+    def test_reports_an_http_error_from_the_rpc_server_as_rpc_error
+      failing = Object.new
+      failing.define_singleton_method(:post) { |*| OpenStruct.new(status: 503, body: "Service Unavailable") }
+      error = assert_error(:rpc_error) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: failing) }
+      assert_equal "HTTP 503 from getLedgerEntries", error.detail
+    end
+
+    def test_gives_the_default_connection_a_request_timeout
+      Faraday.expects(:new).with(request: { timeout: 30, open_timeout: 30 }).returns(rpc)
+      assert_equal RESULT, Subscription.process(@merchant.seed, 7, 0, 20, mode: :simulate)
     end
 
     def test_uses_the_defaults_for_options_given_as_nil

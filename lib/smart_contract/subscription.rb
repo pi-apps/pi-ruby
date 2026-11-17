@@ -20,6 +20,8 @@ class PiNetwork
       # The unused refundable part is returned to the merchant.
       RESOURCE_FEE_MARGIN_PERCENT = 150
       POLL_INTERVAL_SECONDS = 1
+      # Per RPC request, so one request that never answers can't hold process past its deadline for long.
+      REQUEST_TIMEOUT_SECONDS = 30
       U32_MAX = 0xffff_ffff
       U64_MAX = 2**64 - 1
       # The account sequence is an int64, and the transaction uses the next one.
@@ -60,7 +62,8 @@ class PiNetwork
                        network_passphrase: NETWORK_PASSPHRASE,
                        contract_address: CONTRACT_ADDRESS,
                        timeout_seconds: TX_TIMEOUT_SECONDS,
-                       faraday: Faraday.new)
+                       faraday: Faraday.new(request: { timeout: REQUEST_TIMEOUT_SECONDS,
+                                                       open_timeout: REQUEST_TIMEOUT_SECONDS }))
         # nil means the default, as an omitted option does (and as null does in the Node.js package).
         mode = :submit if mode.nil?
         rpc_url ||= RPC_URL
@@ -71,7 +74,7 @@ class PiNetwork
         service_id_value = to_uint(service_id, U64_MAX, :invalid_service_id)
         offset_value = to_uint(offset, U32_MAX, :invalid_offset)
         limit_value = to_uint(limit, U32_MAX, :invalid_limit)
-        mode = mode.to_sym if mode.is_a?(String)
+        mode = mode.to_sym if mode.is_a?(String) && mode.valid_encoding?
         raise SubscriptionError.new(:invalid_mode) unless MODES.include?(mode)
         # Bounded so the transaction's time bounds (u64) can't wrap around.
         unless timeout_seconds.is_a?(Integer) && timeout_seconds.positive? && timeout_seconds <= U32_MAX
@@ -141,7 +144,7 @@ class PiNetwork
       # negative numbers). Used for arguments and for the numbers read from the RPC server.
       def self.parse_uint(value, max)
         parsed = if value.is_a?(Integer) then value
-                 elsif value.is_a?(String) && value.match?(/\A\d+\z/) then Integer(value, 10)
+                 elsif value.is_a?(String) && value.valid_encoding? && value.match?(/\A\d+\z/) then Integer(value, 10)
                  end
         parsed if parsed && parsed >= 0 && parsed <= max
       end
@@ -161,12 +164,14 @@ class PiNetwork
       # ProcessResult. txid is set once the transaction has been sent, so an unreadable result still says which
       # transaction it was.
       def self.process_result(map, txid: nil)
-        result = { charged: map.fetch("charged"), failed: map.fetch("failed"),
-                   skipped: map.fetch("skipped"), total: map.fetch("total") }
-        return result if result.values.all? { |value| value.is_a?(Integer) && value >= 0 && value <= U32_MAX }
+        result = begin
+          { charged: map.fetch("charged"), failed: map.fetch("failed"),
+            skipped: map.fetch("skipped"), total: map.fetch("total") }
+        rescue KeyError, NoMethodError
+          nil
+        end
+        return result if result && result.values.all? { |value| value.is_a?(Integer) && value >= 0 && value <= U32_MAX }
 
-        raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Not a ProcessResult: #{map.inspect}")
-      rescue KeyError, NoMethodError
         raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Not a ProcessResult: #{map.inspect}")
       end
       private_class_method :process_result
@@ -287,15 +292,15 @@ class PiNetwork
 
         private
 
-        # The ProcessResult a successful transaction returned. Like the Node.js package, a success without a return
-        # value is :transaction_not_confirmed; anything unreadable is :unexpected_response. Both keep the txid.
+        # The ProcessResult a successful transaction returned. The transaction succeeded, so anything missing or
+        # unreadable here is :unexpected_response, with the txid (as in the Node.js package).
         def success_return_value(result, txid)
           meta = result["resultMetaJson"]
           meta = meta.values.first if meta.is_a?(Hash)
           value = meta.dig("soroban_meta", "return_value") if meta.is_a?(Hash)
           unless value
-            raise SubscriptionError.new(:transaction_not_confirmed, txid: txid,
-                                                                    detail: "The transaction succeeded but returned no value.")
+            raise SubscriptionError.new(:unexpected_response, txid: txid,
+                                                              detail: "The transaction succeeded but returned no value.")
           end
 
           json_symbol_u32_map(value)

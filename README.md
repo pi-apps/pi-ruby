@@ -326,7 +326,7 @@ Errors are raised as `PiNetwork::Errors::SubscriptionError` with a `code` (a Sym
 | `:transaction_rejected` | The RPC server didn't accept the transaction (e.g. `txInsufficientBalance`); `detail` has the result code. |
 | `:transaction_failed` | The transaction was included but failed; `txid` identifies it. |
 | `:transaction_not_confirmed` | Sent, but the outcome is unknown. Look up `txid` before sending again. |
-| `:unexpected_response`, `:rpc_error` | The RPC server answered with something unreadable, or a request to it failed. If the error has a `txid`, the transaction was already sent: look it up before running the batch again. |
+| `:unexpected_response`, `:rpc_error` | The RPC server answered with something unreadable, or a request to it failed. An `:unexpected_response` with a `txid` means the transaction was already sent (it may have succeeded): look it up before running the batch again. |
 
 The merchant account pays the fee. On the default Pi Testnet contract a call has cost about 0.01 to 0.02 Pi. It grows with the number of subscriptions in the batch, and with rent: the contract extends the lifetime of every entry it touches, which costs more when entries are close to expiring. The gem adds 50% headroom to the simulated resource fee (the unused part is refunded), so keep more than that available in the merchant account.
 
