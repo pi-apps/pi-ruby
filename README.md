@@ -278,7 +278,9 @@ preview = PiNetwork::SmartContract::Subscription.process(merchant_secret, servic
     outcome = PiNetwork::SmartContract::Subscription.process(merchant_secret, service_id, offset, batch)
     puts "#{outcome[:txid]} #{outcome[:result]}" # { charged:, failed:, skipped:, total: }
   rescue PiNetwork::Errors::SubscriptionError => e
-    # :transaction_not_confirmed means it was sent but the outcome is unknown: look up e.txid before retrying.
+    if e.code == :transaction_not_confirmed
+      # Sent, but the outcome is unknown: look up e.txid before running this batch again.
+    end
     raise
   end
 end

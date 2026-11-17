@@ -22,6 +22,8 @@ class PiNetwork
       POLL_INTERVAL_SECONDS = 1
       U32_MAX = 0xffff_ffff
       U64_MAX = 2**64 - 1
+      # The account sequence is an int64, and the transaction uses the next one.
+      SEQUENCE_MAX = 2**63 - 2
       MODES = %i[simulate submit].freeze
 
       # Contract error codes of the subscription contract (PiCoreTeam/pi-smartcontracts, contracts/subscription).
@@ -131,14 +133,18 @@ class PiNetwork
       private_class_method :merchant_keypair
 
       def self.to_uint(value, max, code)
+        parse_uint(value, max) || raise(SubscriptionError.new(code))
+      end
+      private_class_method :to_uint
+
+      # An Integer or a String of digits in 0..max, as an Integer; nil for anything else (including Floats and
+      # negative numbers). Used for arguments and for the numbers read from the RPC server.
+      def self.parse_uint(value, max)
         parsed = if value.is_a?(Integer) then value
                  elsif value.is_a?(String) && value.match?(/\A\d+\z/) then Integer(value, 10)
                  end
-        raise SubscriptionError.new(code) if parsed.nil? || parsed.negative? || parsed > max
-
-        parsed
+        parsed if parsed && parsed >= 0 && parsed <= max
       end
-      private_class_method :to_uint
 
       # An http(s) URI with a host (the scheme comes back lower-cased), or nil.
       def self.http_uri(value)
@@ -151,12 +157,13 @@ class PiNetwork
       end
       private_class_method :http_uri
 
-      # Every count is a u32, so anything else (a missing key, nil, a String) is not a ProcessResult. txid is set
-      # once the transaction has been sent, so an unreadable result still says which transaction it was.
+      # Every count is a u32, so anything else (a missing key, nil, a String, a negative number) is not a
+      # ProcessResult. txid is set once the transaction has been sent, so an unreadable result still says which
+      # transaction it was.
       def self.process_result(map, txid: nil)
         result = { charged: map.fetch("charged"), failed: map.fetch("failed"),
                    skipped: map.fetch("skipped"), total: map.fetch("total") }
-        return result if result.values.all? { |value| value.is_a?(Integer) }
+        return result if result.values.all? { |value| value.is_a?(Integer) && value >= 0 && value <= U32_MAX }
 
         raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Not a ProcessResult: #{map.inspect}")
       rescue KeyError, NoMethodError
@@ -173,8 +180,15 @@ class PiNetwork
 
       # [resource fee with headroom, soroban data carrying that fee, auth entries]
       def self.read_simulation(simulation)
-        resource_fee = Integer(simulation["minResourceFee"]) * RESOURCE_FEE_MARGIN_PERCENT / 100
-        soroban_data = Xdr.with_resource_fee(Xdr.decode64(simulation["transactionData"]), resource_fee)
+        min_resource_fee = parse_uint(simulation["minResourceFee"], U64_MAX)
+        raise ArgumentError, "minResourceFee is not a non-negative integer" unless min_resource_fee
+
+        resource_fee = min_resource_fee * RESOURCE_FEE_MARGIN_PERCENT / 100
+        # SorobanTransactionData ends with its int64 resourceFee, which is replaced; anything shorter isn't one.
+        transaction_data = Xdr.decode64(simulation["transactionData"])
+        raise ArgumentError, "transactionData is too short" unless transaction_data.bytesize > 8
+
+        soroban_data = Xdr.with_resource_fee(transaction_data, resource_fee)
         auth = Array(simulation["results"][0]["auth"]).map { |entry| Xdr.decode64(entry) }
         [resource_fee, soroban_data, auth]
       rescue ArgumentError, TypeError, NoMethodError => e
@@ -204,7 +218,10 @@ class PiNetwork
           entry = Array(result["entries"]).first
           raise SubscriptionError.new(:account_not_found) unless entry
 
-          Integer(entry.dig("dataJson", "account", "seq_num"))
+          sequence = Subscription.parse_uint(entry.dig("dataJson", "account", "seq_num"), SEQUENCE_MAX)
+          raise ArgumentError, "seq_num is not an int64 below the maximum" unless sequence
+
+          sequence
         rescue ArgumentError, TypeError, NoMethodError => e
           raise SubscriptionError.new(:unexpected_response, detail: "Account sequence: #{e.message}")
         end
@@ -249,7 +266,7 @@ class PiNetwork
               result = call("getTransaction", { hash: txid, xdrFormat: "json" })
               case result["status"]
               when "SUCCESS"
-                return { ledger: result["ledger"], return_value: success_return_value(result, txid) }
+                return { ledger: success_ledger(result, txid), return_value: success_return_value(result, txid) }
               when "FAILED"
                 raise SubscriptionError.new(:transaction_failed, txid: txid, detail: failed_result_code(result))
               else
@@ -291,12 +308,19 @@ class PiNetwork
         def failed_result_code(result)
           code = result.dig("resultJson", "result")
           code = code.keys.first if code.is_a?(Hash)
-          return nil unless code.is_a?(String) && !code.empty?
+          return nil unless code.is_a?(String)
 
-          head, *rest = code.split("_")
-          head + rest.map(&:capitalize).join
+          words = code.split("_").reject(&:empty?)
+          words.empty? ? nil : words[0] + words[1..-1].map(&:capitalize).join
         rescue TypeError
           nil
+        end
+
+        def success_ledger(result, txid)
+          ledger = Subscription.parse_uint(result["ledger"], U32_MAX)
+          return ledger if ledger
+
+          raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Transaction ledger: #{result['ledger'].inspect}")
         end
 
         # The refused transaction's result code (e.g. "txBadSeq"), or nil when it can't be read.
@@ -319,7 +343,8 @@ class PiNetwork
             raise SubscriptionError.new(:rpc_error, detail: "HTTP #{response.status} from #{method}")
           end
 
-          body = JSON.parse(response.body.to_s)
+          # A connection with JSON response middleware has already parsed the body.
+          body = response.body.is_a?(Hash) ? response.body : JSON.parse(response.body.to_s)
           raise SubscriptionError.new(:rpc_error, detail: "#{method}: not a JSON-RPC response") unless body.is_a?(Hash)
           raise SubscriptionError.new(:rpc_error, detail: body["error"].to_json) if body["error"]
           # Treated like a failed request: retried while polling, and after sending it means the outcome is unknown.
