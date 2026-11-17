@@ -29,7 +29,8 @@ class PiNetwork
       MODES = %i[simulate submit].freeze
 
       # Contract error codes of the subscription contract as deployed on Pi Testnet (v1, CCUF75B6...); any other code
-      # is reported as UnknownError.
+      # is reported as UnknownError. Verified against the deployed wasm; after a contract upgrade, compare with
+      # `stellar contract info interface --id <contract> --network pi-testnet` (enum ContractError).
       CONTRACT_ERRORS = {
         1 => "InvalidPrice", 2 => "InvalidPeriod", 3 => "AlreadySubscribed", 4 => "SubscriptionNotFound",
         5 => "ServiceNotFound", 6 => "Unauthorized", 7 => "AlreadyCancelled", 8 => "TimestampOverflow",
@@ -269,12 +270,18 @@ class PiNetwork
           last_detail = nil
           loop do
             begin
-              result = call("getTransaction", { hash: txid, xdrFormat: "json" })
+              result = transaction_status(txid)
               case result["status"]
               when "SUCCESS"
+                unless result.key?("resultMetaJson")
+                  raise SubscriptionError.new(:unexpected_response, txid: txid,
+                                                                    detail: "The transaction succeeded, but its result could only be read as base64.")
+                end
+
                 return { ledger: success_ledger(result, txid), return_value: success_return_value(result, txid) }
               when "FAILED"
-                raise SubscriptionError.new(:transaction_failed, txid: txid, detail: failed_result_code(result))
+                detail = result.key?("resultJson") ? failed_result_code(result) : result_code_from_xdr(result["resultXdr"])
+                raise SubscriptionError.new(:transaction_failed, txid: txid, detail: detail)
               else
                 last_detail = result["status"]
               end
@@ -292,6 +299,24 @@ class PiNetwork
         end
 
         private
+
+        # getTransaction, read as JSON. If Pi's RPC server can't encode the answer as JSON (it can't for some, see
+        # send_transaction), the status is read from the base64 answer instead, so a final FAILED or SUCCESS is never
+        # mistaken for a failed request and polled until the deadline.
+        def transaction_status(txid)
+          call("getTransaction", { hash: txid, xdrFormat: "json" })
+        rescue SubscriptionError => e
+          raise e unless e.code == :rpc_error
+
+          call("getTransaction", { hash: txid })
+        end
+
+        # The result code of a base64 TransactionResult (e.g. "txFailed"), or nil when it can't be read.
+        def result_code_from_xdr(xdr)
+          xdr.is_a?(String) ? Xdr.transaction_result_code(Xdr.decode64(xdr)) : nil
+        rescue ArgumentError
+          nil
+        end
 
         # The ProcessResult a successful transaction returned. The transaction succeeded, so anything missing or
         # unreadable here is :unexpected_response, with the txid (as in the Node.js package).
@@ -331,10 +356,7 @@ class PiNetwork
 
         # The refused transaction's result code (e.g. "txBadSeq"), or nil when it can't be read.
         def rejected_result_code(result)
-          xdr = result["errorResultXdr"]
-          xdr.is_a?(String) ? Xdr.transaction_result_code(Xdr.decode64(xdr)) : nil
-        rescue ArgumentError
-          nil
+          result_code_from_xdr(result["errorResultXdr"])
         end
 
         # { "map": [{ "key": { "symbol": "charged" }, "val": { "u32": 0 } }, ...] } -> { "charged" => 0, ... }

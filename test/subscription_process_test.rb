@@ -362,6 +362,29 @@ module SubscriptionProcessTests
       assert_equal RESULT, Subscription.process(@merchant.seed, 7, 0, 20, mode: :simulate)
     end
 
+    def test_reads_the_status_as_base64_when_the_rpc_server_cannot_encode_it_as_json
+      json_fails = lambda do |base64_answer|
+        lambda do |params|
+          if params["xdrFormat"] == "json"
+            FakeRpc::RawBody.new({ jsonrpc: "2.0", id: 1, error: { code: -32603, message: "cannot encode as json" } }.to_json)
+          else
+            base64_answer
+          end
+        end
+      end
+
+      failed = Xdr.encode64(Xdr.int64(100) + Xdr.int32(-1) + Xdr.int32(0))
+      fake = rpc("getTransaction" => json_fails.call({ "status" => "FAILED", "resultXdr" => failed }))
+      error = assert_error(:transaction_failed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+      assert_equal "txFailed", error.detail
+      refute_nil error.txid
+      assert_equal 2, fake.calls("getTransaction").length # one JSON try, one base64 read: no polling to the deadline
+
+      fake = rpc("getTransaction" => json_fails.call({ "status" => "SUCCESS", "ledger" => 101, "resultMetaXdr" => "AAAA" }))
+      error = assert_error(:unexpected_response) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+      refute_nil error.txid
+    end
+
     def test_uses_the_defaults_for_options_given_as_nil
       fake = rpc
       result = Subscription.process(@merchant.seed, 7, 0, 20, mode: nil, rpc_url: nil, network_passphrase: nil,
