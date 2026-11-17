@@ -59,13 +59,20 @@ class PiNetwork
                        contract_address: CONTRACT_ADDRESS,
                        timeout_seconds: TX_TIMEOUT_SECONDS,
                        faraday: Faraday.new)
+        # nil means the default, as an omitted option does (and as null does in the Node.js package).
+        mode = :submit if mode.nil?
+        rpc_url ||= RPC_URL
+        network_passphrase ||= NETWORK_PASSPHRASE
+        contract_address ||= CONTRACT_ADDRESS
+        timeout_seconds ||= TX_TIMEOUT_SECONDS
         keypair = merchant_keypair(merchant_secret)
         service_id_value = to_uint(service_id, U64_MAX, :invalid_service_id)
         offset_value = to_uint(offset, U32_MAX, :invalid_offset)
         limit_value = to_uint(limit, U32_MAX, :invalid_limit)
         mode = mode.to_sym if mode.is_a?(String)
         raise SubscriptionError.new(:invalid_mode) unless MODES.include?(mode)
-        unless timeout_seconds.is_a?(Integer) && timeout_seconds.positive?
+        # Bounded so the transaction's time bounds (u64) can't wrap around.
+        unless timeout_seconds.is_a?(Integer) && timeout_seconds.positive? && timeout_seconds <= U32_MAX
           raise SubscriptionError.new(:invalid_timeout)
         end
         rpc_uri = http_uri(rpc_url)
@@ -209,7 +216,8 @@ class PiNetwork
                                                             **Subscription.contract_error(result["error"]))
           end
           raise SubscriptionError.new(:state_archived) if result["restorePreamble"]
-          unless result.dig("results", 0, "xdr")
+          results = result["results"]
+          unless results.is_a?(Array) && results[0].is_a?(Hash) && results[0]["xdr"]
             raise SubscriptionError.new(:simulation_failed, detail: "The simulation returned no result.")
           end
 
@@ -226,10 +234,12 @@ class PiNetwork
             raise SubscriptionError.new(:transaction_not_confirmed, txid: txid, detail: e.detail || e.message)
           end
           status = result["status"]
-          return if %w[PENDING DUPLICATE].include?(status)
+          # Only these two mean the transaction was not accepted. Anything else (PENDING, DUPLICATE, or a status
+          # this SDK doesn't know) may still land, so it's polled for, as in the Node.js package.
+          return unless %w[ERROR TRY_AGAIN_LATER].include?(status)
 
-          code = result["errorResultXdr"] && Xdr.transaction_result_code(Xdr.decode64(result["errorResultXdr"]))
-          raise SubscriptionError.new(:transaction_rejected, txid: txid, detail: code || status)
+          raise SubscriptionError.new(:transaction_rejected, txid: txid,
+                                                             detail: rejected_result_code(result) || status)
         end
 
         def wait_for_transaction(txid, deadline:)
@@ -276,12 +286,24 @@ class PiNetwork
           raise SubscriptionError.new(:unexpected_response, txid: txid, detail: "Transaction result: #{e.message}")
         end
 
-        # The failed transaction's result code, e.g. "tx_failed", or nil when it can't be read.
+        # The failed transaction's result code in the JS stellar-sdk's form used everywhere else (e.g. "txFailed"
+        # for the JSON "tx_failed"), or nil when it can't be read.
         def failed_result_code(result)
           code = result.dig("resultJson", "result")
           code = code.keys.first if code.is_a?(Hash)
-          code&.to_s
+          return nil unless code.is_a?(String) && !code.empty?
+
+          head, *rest = code.split("_")
+          head + rest.map(&:capitalize).join
         rescue TypeError
+          nil
+        end
+
+        # The refused transaction's result code (e.g. "txBadSeq"), or nil when it can't be read.
+        def rejected_result_code(result)
+          xdr = result["errorResultXdr"]
+          xdr.is_a?(String) ? Xdr.transaction_result_code(Xdr.decode64(xdr)) : nil
+        rescue ArgumentError
           nil
         end
 
@@ -297,8 +319,11 @@ class PiNetwork
             raise SubscriptionError.new(:rpc_error, detail: "HTTP #{response.status} from #{method}")
           end
 
-          body = JSON.parse(response.body)
+          body = JSON.parse(response.body.to_s)
+          raise SubscriptionError.new(:rpc_error, detail: "#{method}: not a JSON-RPC response") unless body.is_a?(Hash)
           raise SubscriptionError.new(:rpc_error, detail: body["error"].to_json) if body["error"]
+          # Treated like a failed request: retried while polling, and after sending it means the outcome is unknown.
+          raise SubscriptionError.new(:rpc_error, detail: "#{method}: no result object") unless body["result"].is_a?(Hash)
 
           body["result"]
         rescue Faraday::Error, JSON::ParserError => e

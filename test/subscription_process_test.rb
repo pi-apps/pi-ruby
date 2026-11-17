@@ -10,6 +10,9 @@ SubscriptionError = PiNetwork::Errors::SubscriptionError
 # A Faraday stand-in for the Soroban RPC server: answers each JSON-RPC method from a table of handlers and records
 # every request, so a test can inspect what was sent.
 class FakeRpc
+  # A handler value that is sent as the raw HTTP body instead of as the JSON-RPC result.
+  RawBody = Struct.new(:body)
+
   attr_reader :requests, :urls
 
   def initialize(handlers)
@@ -24,6 +27,8 @@ class FakeRpc
     @requests << request
     handler = @handlers.fetch(request["method"]) { raise "unexpected RPC call #{request['method']}" }
     result = handler.respond_to?(:call) ? handler.call(request["params"]) : handler
+    return OpenStruct.new(status: 200, body: result.body) if result.is_a?(RawBody)
+
     OpenStruct.new(status: 200, body: { jsonrpc: "2.0", id: 1, result: result }.to_json)
   end
 
@@ -130,7 +135,10 @@ class SubscriptionProcessTest < Minitest::Test
     end
     assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, "", 0, 20, faraday: fake) }
     assert_error(:invalid_service_id) { Subscription.process(@merchant.seed, (2**64).to_s, 0, 20, faraday: fake) }
-    ["ftp://rpc.example", "http://", "http://rpc example", nil].each do |url|
+    [2**32, 2**64, 1.5, "180"].each do |timeout|
+      assert_error(:invalid_timeout) { Subscription.process(@merchant.seed, 7, 0, 20, timeout_seconds: timeout, faraday: fake) }
+    end
+    ["ftp://rpc.example", "http://", "http://rpc example", 5].each do |url|
       assert_error(:invalid_rpc_url) { Subscription.process(@merchant.seed, 7, 0, 20, rpc_url: url, faraday: fake) }
     end
     assert_empty fake.requests
@@ -203,8 +211,70 @@ class SubscriptionProcessTest < Minitest::Test
   def test_reports_a_failed_transaction_with_its_hash
     fake = rpc("getTransaction" => { "status" => "FAILED", "resultJson" => { "result" => { "tx_failed" => [] } } })
     error = assert_error(:transaction_failed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
-    assert_equal "tx_failed", error.detail
+    assert_equal "txFailed", error.detail
     refute_nil error.txid
+
+    fake = rpc("getTransaction" => { "status" => "FAILED", "resultJson" => { "result" => "tx_bad_min_seq_age_or_gap" } })
+    error = assert_error(:transaction_failed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+    assert_equal "txBadMinSeqAgeOrGap", error.detail
+
+    fake = rpc("getTransaction" => { "status" => "FAILED", "resultJson" => "unreadable" })
+    error = assert_error(:transaction_failed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+    assert_nil error.detail
+    refute_nil error.txid
+  end
+
+  def test_reports_a_refused_send_whose_result_code_cannot_be_read_with_its_status
+    ["!!! not base64", 5].each do |unreadable|
+      fake = rpc("sendTransaction" => { "status" => "ERROR", "errorResultXdr" => unreadable })
+      error = assert_error(:transaction_rejected) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+      assert_equal "ERROR", error.detail
+      refute_nil error.txid
+    end
+  end
+
+  def test_polls_for_the_outcome_after_a_send_status_it_does_not_know
+    [{ "status" => "SOMETHING_NEW" }, {}].each do |sent|
+      fake = rpc("sendTransaction" => sent)
+      assert_equal RESULT, Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake)[:result]
+      assert_equal 1, fake.calls("getTransaction").length
+    end
+  end
+
+  def test_treats_a_response_without_a_result_object_as_a_failed_request
+    [nil, FakeRpc::RawBody.new("[1]"), FakeRpc::RawBody.new("null")].each do |answer|
+      fake = rpc("simulateTransaction" => answer)
+      assert_error(:rpc_error) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+      assert_empty fake.calls("sendTransaction")
+    end
+
+    # After sending, the outcome is unknown: the error keeps the txid.
+    fake = rpc("sendTransaction" => nil)
+    error = assert_error(:transaction_not_confirmed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+    refute_nil error.txid
+
+    # While polling, it is retried like any failed request until the deadline.
+    Subscription::Rpc.any_instance.stubs(:sleep)
+    Time.stubs(:now).returns(Time.at(1_000), Time.at(1_000), Time.at(2_000))
+    fake = rpc("getTransaction" => nil)
+    error = assert_error(:transaction_not_confirmed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+    refute_nil error.txid
+    assert_equal "getTransaction: no result object", error.detail
+  end
+
+  def test_reports_a_simulation_whose_results_are_not_a_list_as_simulation_failed
+    fake = rpc("simulateTransaction" => { "results" => "not a list" })
+    assert_error(:simulation_failed) { Subscription.process(@merchant.seed, 7, 0, 20, faraday: fake) }
+  end
+
+  def test_uses_the_defaults_for_options_given_as_nil
+    fake = rpc
+    result = Subscription.process(@merchant.seed, 7, 0, 20, mode: nil, rpc_url: nil, network_passphrase: nil,
+                                                             contract_address: nil, timeout_seconds: nil, faraday: fake)
+    assert_equal [Subscription::RPC_URL], fake.urls.uniq
+    transaction, = unwrap_envelope(fake.calls("sendTransaction").first.dig("params", "transaction"))
+    assert_equal Xdr.transaction_hash("Pi Testnet", transaction).unpack1("H*"), result[:txid]
+    assert_includes transaction, Xdr.decode_contract_address(Subscription::CONTRACT_ADDRESS)
   end
 
   def test_keeps_the_hash_when_the_outcome_is_unknown_so_the_caller_can_look_it_up

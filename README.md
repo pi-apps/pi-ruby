@@ -296,8 +296,9 @@ PiNetwork::SmartContract::Subscription.process(
   rpc_url: "https://rpc.testnet.minepi.com",
   network_passphrase: "Pi Testnet",
   contract_address: "CCUF75B6W3HRJTJD6O7OXNI72HGJ7DERZ5MUNOMFMSK23ME5GUIKPFYV", # the Pi Testnet Subscription contract
-  timeout_seconds: 180   # how long the transaction stays valid
+  timeout_seconds: 180   # how long the transaction stays valid (1..4294967295)
 )
+# An option passed as nil uses its default, the same as leaving it out.
 # mode: :simulate => { charged:, failed:, skipped:, total: }
 # mode: :submit   => { txid:, ledger:, result: { charged:, failed:, skipped:, total: } }
 ```
